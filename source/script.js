@@ -61,8 +61,13 @@ function renderProjectList() {
         projectCard.classList.add("project-card");
         projectCard.dataset.projectId = project.id;
 
+        let titleDisplay = project.title;
+        if (project.type === 'tv-series' && project.seriesName) {
+            titleDisplay = `${project.seriesName}: ${project.title}`;
+        }
+
         projectCard.innerHTML = `
-            <h2>${project.title}</h2>
+            <h2>${titleDisplay}</h2>
             <p>${project.type}</p>
         `;
 
@@ -72,6 +77,27 @@ function renderProjectList() {
 
         projectListContainer.appendChild(projectCard);
     });
+}
+
+function getFieldLabel(key, projectType) {
+    const defaultLabels = {
+        seriesName: "Series Name",
+        seriesLogline: "Series Logline",
+        season: "Season",
+        episode: "Episode",
+        logline: "Logline",
+        themes: "Themes",
+        storyType: "Story Type",
+        genres: "Genres",
+        tone: "Tone",
+        audience: "Audience"
+    };
+
+    if (projectType === 'tv-series' && key === 'title') {
+        return "Episode Title";
+    }
+
+    return defaultLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 }
 
 function renderProjectDetail(projectId) {
@@ -99,23 +125,24 @@ function renderProjectDetail(projectId) {
     detailView.appendChild(backButton);
 
     const titleHeader = document.createElement('h1');
-    titleHeader.textContent = project.title;
+    titleHeader.textContent = project.type === 'tv-series' ? project.seriesName : project.title;
     detailView.appendChild(titleHeader);
 
     const form = document.createElement('form');
 
     // Dynamically create form fields based on project schema
     for (const key in project) {
-        if (key === 'id' || key === 'type' || key === 'title') continue;
+        if (key === 'id' || key === 'type') continue;
+        if (project.type === 'movie' && key === 'title') continue; // Only skip title for movies
 
         const formGroup = document.createElement('div');
         formGroup.classList.add('form-group');
 
         const label = document.createElement('label');
         label.setAttribute('for', `field-${key}`);
-        label.textContent = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()); // Prettify label
+        label.textContent = getFieldLabel(key, project.type);
 
-        const input = document.createElement(key === 'logline' || key === 'themes' ? 'textarea' : 'input');
+        const input = document.createElement(key.toLowerCase().includes('logline') || key === 'themes' ? 'textarea' : 'input');
         input.type = 'text';
         input.id = `field-${key}`;
         input.name = key;
@@ -139,7 +166,7 @@ function renderProjectDetail(projectId) {
 
 // Example of a Movie Project
 const movieSchema = {
-    id: "", // Unique identifier
+    id: "",
     title: "",
     type: "movie",
     logline: "",
@@ -152,20 +179,18 @@ const movieSchema = {
 
 // Example of a TV Series Project
 const tvSeriesSchema = {
-    id: "", // Unique identifier
-    title: "",
+    id: "",
+    title: "", // This will be the Episode Title
     type: "tv-series",
-    seriesName: "",
+    seriesName: "", // The name of the whole series
     seriesLogline: "",
+    season: "",
+    episode: "",
     themes: "",
     storyType: "",
     genres: "",
     tone: "",
     audience: ""
-    // Could also include an array for seasons/episodes
-    // seasons: [
-    //   { season: 1, episodes: [] }
-    // ]
 };
 
 // --- DATA PERSISTENCE ---
