@@ -160,6 +160,27 @@ function renderProjectDetail(projectId) {
     }
 
     detailView.appendChild(form);
+
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = 'Delete Project';
+    deleteButton.classList.add('delete-button');
+    deleteButton.addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+            projects = projects.filter(p => p.id !== projectId);
+            saveProjects();
+
+            // Go back to the main list view
+            const header = document.querySelector('header');
+            const projectListView = document.getElementById('project-list');
+            const detailView = document.getElementById('project-detail-view');
+
+            header.style.display = 'flex';
+            projectListView.style.display = 'grid';
+            detailView.style.display = 'none';
+            renderProjectList();
+        }
+    });
+    detailView.appendChild(deleteButton);
 }
 
 // --- DATA MODEL ---
