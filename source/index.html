@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberfilm - Project Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>My Projects</h1>
+        <button id="create-new-project-btn">Create New Project</button>
+    </header>
+
+    <main id="project-list">
+        <!-- Projects will be dynamically inserted here -->
+    </main>
+
+    <!-- Modal for creating a new project -->
+    <div id="create-project-modal" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2>Create New Project</h2>
+            <form id="create-project-form">
+                <label for="project-title">Project Title:</label>
+                <input type="text" id="project-title" name="project-title" required>
+                <label for="project-type">Type:</label>
+                <select id="project-type" name="project-type">
+                    <option value="movie">Movie</option>
+                    <option value="tv-series">TV Series</option>
+                </select>
+                <button type="submit">Create Project</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="project-detail-view" style="display:none;">
+        <!-- Project details will be loaded here -->
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
