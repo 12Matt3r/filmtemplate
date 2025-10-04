@@ -167,3 +167,12 @@ button:hover {
     min-height: 100px;
     resize: vertical;
 }
+
+.delete-button {
+    background-color: #c62828; /* Red for destructive action */
+    margin-top: 2rem;
+}
+
+.delete-button:hover {
+    background-color: #e53935;
+}
