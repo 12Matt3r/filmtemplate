@@ -141,6 +141,23 @@ const fieldDescriptions = {
     actFive: "The climax and resolution of the episode's conflict."
 };
 
+function mockAIGeneration(key, project) {
+    const mockResponses = {
+        logline: `In a city powered by dreams, a cynical detective must team up with a cheerful, talking teddy bear to solve a series of crimes that are causing nightmares to leak into reality.`,
+        seriesLogline: `A group of outcast librarians discovers that all fiction is real and must use their knowledge of stories to protect the world from literary villains who have escaped their books.`,
+        themes: `This story explores the power of found family, the conflict between cynicism and hope, and the idea that stories have a life of their own.`,
+        tone: `A whimsical urban fantasy with a noir-style mystery at its core. It's humorous and heartwarming, but with moments of genuine peril.`,
+        archetype: `The Reluctant Hero: A character who is initially unwilling to accept their destiny but rises to the occasion when others are in need.`,
+        motivation: `To prove their worth to a world that has always underestimated them.`,
+        flaws: `A stubborn pride that makes it difficult to ask for help, and a deep-seated fear of spiders.`,
+        backstory: `Once a promising scholar, they were exiled after a magical experiment went wrong, forcing them to live a quiet life in obscurity until the story begins.`,
+        openingImage: `A single, glowing book sits on a dusty, forgotten shelf in a vast, dark library.`,
+        catalyst: `A character from a famous novel appears in the real world, pleading for help.`,
+        finale: `The heroes use their combined knowledge of literary tropes to outsmart the main villain, trapping them in a paradox from which they cannot escape.`
+    };
+    return mockResponses[key] || `[This is a simulated AI suggestion for the '${getFieldLabel(key, project.type)}' field.]`;
+}
+
 function createSection(title) {
     const section = document.createElement('div');
     section.classList.add('form-section');
@@ -183,7 +200,13 @@ function createField(project, path) {
     generateButton.type = 'button';
     generateButton.textContent = 'Generate';
     generateButton.classList.add('generate-button');
-    generateButton.addEventListener('click', () => alert('AI Generation is not implemented in this version.'));
+    generateButton.addEventListener('click', () => {
+        const generatedText = mockAIGeneration(key, project);
+        input.value = generatedText;
+        // Also update the data model and save
+        parent[key] = generatedText;
+        saveProjects();
+    });
 
     formGroup.appendChild(label);
     if (description.textContent) {
