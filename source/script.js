@@ -141,7 +141,11 @@ const fieldDescriptions = {
     actFive: "The climax and resolution of the episode's conflict."
 };
 
-function mockAIGeneration(key, project) {
+async function callAIService(key, project) {
+    console.log(`Calling simulated AI for field: ${key}`);
+
+    // This is the placeholder for a real API call to Comet.
+    // A developer would replace this block with a `fetch` call.
     const mockResponses = {
         logline: `In a city powered by dreams, a cynical detective must team up with a cheerful, talking teddy bear to solve a series of crimes that are causing nightmares to leak into reality.`,
         seriesLogline: `A group of outcast librarians discovers that all fiction is real and must use their knowledge of stories to protect the world from literary villains who have escaped their books.`,
@@ -155,7 +159,12 @@ function mockAIGeneration(key, project) {
         catalyst: `A character from a famous novel appears in the real world, pleading for help.`,
         finale: `The heroes use their combined knowledge of literary tropes to outsmart the main villain, trapping them in a paradox from which they cannot escape.`
     };
-    return mockResponses[key] || `[This is a simulated AI suggestion for the '${getFieldLabel(key, project.type)}' field.]`;
+    const responseText = mockResponses[key] || `[This is a simulated AI suggestion for the '${getFieldLabel(key, project.type)}' field.]`;
+
+    // Simulate a network delay of 1 second
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    return responseText;
 }
 
 function createSection(title) {
@@ -200,12 +209,24 @@ function createField(project, path) {
     generateButton.type = 'button';
     generateButton.textContent = 'Generate';
     generateButton.classList.add('generate-button');
-    generateButton.addEventListener('click', () => {
-        const generatedText = mockAIGeneration(key, project);
-        input.value = generatedText;
-        // Also update the data model and save
-        parent[key] = generatedText;
-        saveProjects();
+    generateButton.addEventListener('click', async () => {
+        generateButton.disabled = true;
+        generateButton.textContent = 'Generating...';
+        generateButton.setAttribute('data-loading', 'true'); // For testability
+
+        try {
+            const generatedText = await callAIService(key, project);
+            input.value = generatedText;
+            parent[key] = generatedText;
+            saveProjects();
+        } catch (error) {
+            console.error("AI service call failed:", error);
+            // Optionally, show an error to the user
+        } finally {
+            generateButton.disabled = false;
+            generateButton.textContent = 'Generate';
+            generateButton.removeAttribute('data-loading'); // For testability
+        }
     });
 
     formGroup.appendChild(label);
