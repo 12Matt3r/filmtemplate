@@ -176,3 +176,87 @@ button:hover {
 .delete-button:hover {
     background-color: #e53935;
 }
+
+/* Character Section Styles */
+.character-subsection {
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    background-color: #1f1f1f;
+}
+
+.add-button {
+    background-color: #004d40; /* A different color for adding items */
+    margin-top: 1rem;
+}
+
+.add-button:hover {
+    background-color: #00796b;
+}
+
+.delete-character-button {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    margin-top: 1rem;
+    background-color: #4e342e; /* A more subtle delete color */
+}
+
+.delete-character-button:hover {
+    background-color: #6d4c41;
+}
+
+/* New Form Structure Styles */
+.form-section {
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.form-section h2 {
+    margin-top: 0;
+    border-bottom: 1px solid #333;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.field-description {
+    font-size: 0.9rem;
+    color: #aaa;
+    margin-top: -0.5rem;
+    margin-bottom: 1rem;
+}
+
+.generate-button {
+    background-color: transparent;
+    border: 1px solid #6200ee;
+    color: #6200ee;
+    margin-left: 1rem;
+    padding: 0.5rem 1rem;
+}
+
+.generate-button:hover {
+    background-color: rgba(98, 0, 238, 0.1);
+}
+
+.form-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.form-group label, .form-group input, .form-group textarea {
+    flex-basis: 100%;
+}
+
+.form-group input, .form-group textarea {
+    width: calc(100% - 140px); /* Adjust width to account for generate button */
+    display: inline-block;
+}
+
+.form-group .generate-button {
+    flex-shrink: 0;
+    width: 120px;
+}
