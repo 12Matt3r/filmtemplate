@@ -206,6 +206,35 @@ button:hover {
     background-color: #6d4c41;
 }
 
+/* Tab Navigation Styles */
+.tab-container {
+    display: flex;
+    border-bottom: 1px solid #333;
+    margin-bottom: 2rem;
+}
+
+.tab-button {
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    color: #aaa;
+    font-size: 1.1rem;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.tab-button:hover {
+    background: none;
+    color: #fff;
+}
+
+.tab-button.active {
+    color: #6200ee;
+    border-bottom: 3px solid #6200ee;
+    font-weight: 600;
+}
+
 /* New Form Structure Styles */
 .form-section {
     background-color: #1a1a1a;

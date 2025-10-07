@@ -170,6 +170,7 @@ async function callAIService(key, project) {
 function createSection(title) {
     const section = document.createElement('div');
     section.classList.add('form-section');
+    section.id = `section-${title.replace(/\s+/g, '-').toLowerCase()}`; // e.g., 'section-core-concepts'
     const sectionTitle = document.createElement('h2');
     sectionTitle.textContent = title;
     section.appendChild(sectionTitle);
@@ -267,6 +268,21 @@ function renderProjectDetail(projectId) {
     titleHeader.textContent = project.type === 'tv-series' ? project.seriesName : project.title;
     detailView.appendChild(titleHeader);
 
+    // --- Create Tab Navigation ---
+    const tabContainer = document.createElement('div');
+    tabContainer.classList.add('tab-container');
+
+    const tabs = ['Core Concepts', 'Characters', 'Structure'];
+    tabs.forEach(tabName => {
+        const tabButton = document.createElement('button');
+        tabButton.textContent = tabName;
+        tabButton.classList.add('tab-button');
+        tabButton.dataset.tab = tabName.replace(/\s+/g, '-').toLowerCase(); // e.g., 'core-concepts'
+        tabContainer.appendChild(tabButton);
+    });
+
+    detailView.appendChild(tabContainer);
+
     const form = document.createElement('form');
     form.id = 'project-form';
 
@@ -292,6 +308,33 @@ function renderProjectDetail(projectId) {
     form.appendChild(structureSection);
 
     detailView.appendChild(form);
+
+    // --- Tab Switching Logic ---
+    const tabButtons = tabContainer.querySelectorAll('.tab-button');
+
+    function switchTab(activeTab) {
+        tabButtons.forEach(button => {
+            const tab = button.dataset.tab;
+            const section = document.getElementById(`section-${tab}`);
+            if (tab === activeTab) {
+                button.classList.add('active');
+                if (section) section.style.display = 'block';
+            } else {
+                button.classList.remove('active');
+                if (section) section.style.display = 'none';
+            }
+        });
+    }
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevent form submission
+            switchTab(button.dataset.tab);
+        });
+    });
+
+    // Set the default tab to be active
+    switchTab('core-concepts');
 
     const deleteButton = document.createElement('button');
     deleteButton.textContent = 'Delete Project';
