@@ -1,3 +1,13 @@
+function debounce(func, delay) {
+    let timeoutId;
+    return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     loadProjects(); // Load projects on startup
 
@@ -38,7 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         projects.push(newProject);
-        saveProjects(); // Save after creating
+        saveAndIndicate(); // Save after creating
         renderProjectList();
 
         modal.style.display = "none";
@@ -203,7 +213,8 @@ function createField(project, path) {
 
     input.addEventListener('input', () => {
         parent[key] = input.value;
-        saveProjects();
+        updateSaveIndicator('saving');
+        debouncedSave();
     });
 
     const generateButton = document.createElement('button');
@@ -219,7 +230,7 @@ function createField(project, path) {
             const generatedText = await callAIService(key, project);
             input.value = generatedText;
             parent[key] = generatedText;
-            saveProjects();
+            saveAndIndicate();
         } catch (error) {
             console.error("AI service call failed:", error);
             // Optionally, show an error to the user
@@ -342,7 +353,7 @@ function renderProjectDetail(projectId) {
     deleteButton.addEventListener('click', () => {
         if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
             projects = projects.filter(p => p.id !== projectId);
-            saveProjects();
+            saveAndIndicate();
 
             // Go back to the main list view by hiding detail and showing main
             const header = document.querySelector('header');
@@ -378,7 +389,7 @@ function renderCharactersSection(project, container) {
         deleteCharButton.classList.add('delete-button', 'delete-character-button');
         deleteCharButton.addEventListener('click', () => {
             project.characters.splice(index, 1);
-            saveProjects();
+            saveAndIndicate();
             renderCharactersSection(project, container); // Re-render this section
         });
         characterSubSection.appendChild(deleteCharButton);
@@ -396,7 +407,7 @@ function renderCharactersSection(project, container) {
             id: `char-${Date.now()}`
         };
         project.characters.push(newCharacter);
-        saveProjects();
+        saveAndIndicate();
         renderCharactersSection(project, container); // Re-render this section
     });
 
@@ -478,9 +489,40 @@ const characterSchema = {
 // --- DATA PERSISTENCE ---
 
 let projects = [];
+let saveTimeout; // For the indicator
+
+function updateSaveIndicator(status) {
+    const indicator = document.getElementById('save-indicator');
+    if (status === 'saving') {
+        indicator.textContent = 'Saving...';
+        indicator.classList.add('show');
+    } else if (status === 'saved') {
+        indicator.textContent = 'Saved';
+        indicator.classList.add('show');
+        // Hide it after a delay
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+            indicator.classList.remove('show');
+        }, 2000);
+    }
+}
 
 function saveProjects() {
     localStorage.setItem('cyberfilm-projects', JSON.stringify(projects));
+}
+
+const debouncedSave = debounce(() => {
+    saveProjects();
+    updateSaveIndicator('saved');
+}, 1000); // 1-second debounce delay
+
+function saveAndIndicate() {
+    updateSaveIndicator('saving');
+    saveProjects();
+    // Use a short timeout to make "Saving..." visible before it flips to "Saved"
+    setTimeout(() => {
+        updateSaveIndicator('saved');
+    }, 100);
 }
 
 function loadProjects() {
