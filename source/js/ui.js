@@ -168,7 +168,7 @@ function renderEpisodes(p) {
         <input class="inline-input" value="${escapeAttr(ep.title)}" />
         <button class="btn btn--tiny" data-action="del">×</button>
       </div>
-      <textarea rows="3" class="block">${escapeHTML(ep.outline || "")}</textarea>
+      <textarea rows="3" class="block" placeholder="Episode outline…">${escapeHTML(ep.outline || "")}</textarea>
     `;
     const [titleInput, delBtn, outlineTa] = [
       li.querySelector("input"),
