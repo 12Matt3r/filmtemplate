@@ -6,26 +6,36 @@ const LS_KEY = "scriptstudio.v1";
 const defaultProject = () => ({
   id: uid("proj"),
   title: "Untitled Project",
-  type: "series",              // 'series' | 'film'
+  type: "series",
   logline: "",
   synopsis: "",
-  episodes: [],                // [{ id, title, number, outline, scenes: [...] }]
-  characters: [],              // [{ id, name, bio, goals }]
+  episodes: [],
+  characters: [],
   createdAt: Date.now(),
   updatedAt: Date.now()
 });
 
 const state = {
   projects: [],
-  activeId: null
+  activeId: null,
+  settings: {
+    autosave: true,
+  },
 };
 
 export const load = () => {
   const saved = safeParse(localStorage.getItem(LS_KEY), null);
-  if (saved && Array.isArray(saved.projects) && saved.projects.length > 0) {
-    state.projects = saved.projects;
-    state.activeId = saved.activeId ?? saved.projects[0]?.id ?? null;
-  } else {
+  if (saved) {
+    if (Array.isArray(saved.projects) && saved.projects.length > 0) {
+      state.projects = saved.projects;
+      state.activeId = saved.activeId ?? saved.projects[0]?.id ?? null;
+    }
+    if (saved.settings) {
+      state.settings = { ...state.settings, ...saved.settings };
+    }
+  }
+
+  if (state.projects.length === 0) {
     const p = defaultProject();
     state.projects = [p];
     state.activeId = p.id;
@@ -33,22 +43,36 @@ export const load = () => {
   emit("data:changed", snapshot());
 };
 
-const persist = () => {
+export const persist = () => {
   localStorage.setItem(LS_KEY, JSON.stringify({
     projects: state.projects,
-    activeId: state.activeId
+    activeId: state.activeId,
+    settings: state.settings,
   }));
   emit("data:changed", snapshot());
 };
 
+const _autoPersist = () => {
+    if (state.settings.autosave) {
+        persist();
+    } else {
+        emit("data:changed", snapshot());
+    }
+};
+
 export const snapshot = () => JSON.parse(JSON.stringify(state));
+
+export const updateSettings = (patch) => {
+  Object.assign(state.settings, patch);
+  persist();
+};
 
 export const getActive = () => state.projects.find(p => p.id === state.activeId) || null;
 
 export const setActive = (id) => {
   if (state.projects.some(p => p.id === id)) {
     state.activeId = id;
-    persist();
+    _autoPersist();
   }
 };
 
@@ -56,7 +80,7 @@ export const createProject = (partial = {}) => {
   const p = { ...defaultProject(), ...partial, id: uid("proj"), updatedAt: Date.now() };
   state.projects.unshift(p);
   state.activeId = p.id;
-  persist();
+  _autoPersist();
   return p;
 };
 
@@ -64,14 +88,14 @@ export const updateProject = (patch) => {
   const p = getActive();
   if (!p) return;
   Object.assign(p, patch, { updatedAt: Date.now() });
-  persist();
+  _autoPersist();
 };
 
 export const deleteActiveProject = () => {
   const idx = state.projects.findIndex(p => p.id === state.activeId);
   if (idx >= 0) state.projects.splice(idx, 1);
   state.activeId = state.projects[0]?.id ?? null;
-  persist();
+  _autoPersist();
 };
 
 const defaultScene = () => ({
@@ -86,7 +110,7 @@ export const addEpisode = (title = "Episode") => {
   const number = p.episodes.length + 1;
   p.episodes.push({ id: uid("ep"), title, number, outline: "", scenes: [] });
   p.updatedAt = Date.now();
-  persist();
+  _autoPersist();
 };
 
 export const addScene = (episodeId) => {
@@ -123,21 +147,21 @@ export const removeEpisode = (id) => {
   p.episodes = p.episodes.filter(e => e.id !== id);
   p.episodes.forEach((e, i) => e.number = i + 1);
   p.updatedAt = Date.now();
-  persist();
+  _autoPersist();
 };
 
 export const addCharacter = (name = "New Character") => {
   const p = getActive(); if (!p) return;
   p.characters.push({ id: uid("ch"), name, bio: "", goals: "" });
   p.updatedAt = Date.now();
-  persist();
+  _autoPersist();
 };
 
 export const removeCharacter = (id) => {
   const p = getActive(); if (!p) return;
   p.characters = p.characters.filter(c => c.id !== id);
   p.updatedAt = Date.now();
-  persist();
+  _autoPersist();
 };
 
 const reorderArray = (array, fromIndex, toIndex) => {
@@ -147,7 +171,7 @@ const reorderArray = (array, fromIndex, toIndex) => {
 
 export const reorderProjects = (fromIndex, toIndex) => {
     reorderArray(state.projects, fromIndex, toIndex);
-    persist();
+    _autoPersist();
 };
 
 export const reorderEpisodes = (fromIndex, toIndex) => {
@@ -156,7 +180,7 @@ export const reorderEpisodes = (fromIndex, toIndex) => {
     reorderArray(p.episodes, fromIndex, toIndex);
     p.episodes.forEach((e, i) => e.number = i + 1);
     p.updatedAt = Date.now();
-    persist();
+    _autoPersist();
 };
 
 export const reorderCharacters = (fromIndex, toIndex) => {
@@ -164,7 +188,7 @@ export const reorderCharacters = (fromIndex, toIndex) => {
     if (!p) return;
     reorderArray(p.characters, fromIndex, toIndex);
     p.updatedAt = Date.now();
-    persist();
+    _autoPersist();
 };
 
 export const exportJSON = () => {
@@ -178,5 +202,5 @@ export const importJSON = (json) => {
   const p = { ...defaultProject(), ...obj, id: uid("proj"), createdAt: Date.now(), updatedAt: Date.now() };
   state.projects.unshift(p);
   state.activeId = p.id;
-  persist();
+  _autoPersist();
 };

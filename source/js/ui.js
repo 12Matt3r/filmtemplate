@@ -1,7 +1,7 @@
 // ui.js
 import { on, emit, debounce } from "./utils.js";
 import {
-  snapshot, getActive, setActive,
+  snapshot, getActive, setActive, updateSettings, persist,
   createProject, updateProject, deleteActiveProject,
   addEpisode, removeEpisode, addScene, updateScene, removeScene,
   addCharacter, removeCharacter, reorderProjects, reorderEpisodes, reorderCharacters,
@@ -20,6 +20,7 @@ export const initUI = () => {
   // Cache elements
   els.projectList = $("#project-list");
   els.newProjectBtn = $("#new-project-btn");
+  els.saveBtn = $("#save-btn");
   els.title = $("#project-title");
   els.logline = $("#logline");
   els.synopsis = $("#synopsis");
@@ -122,6 +123,14 @@ function bindEvents() {
     e.target.value = "";
   });
 
+  els.autosave.addEventListener("change", (e) => {
+    updateSettings({ autosave: e.target.checked });
+  });
+
+  els.saveBtn.addEventListener("click", () => {
+    persist();
+  });
+
   els.deleteBtn.addEventListener("click", () => {
     if (confirm("Delete current project?")) deleteActiveProject();
   });
@@ -137,10 +146,11 @@ function bindEvents() {
 
 function renderAll() {
   const snap = snapshot();
+  els.saveBtn.hidden = snap.settings.autosave;
   renderProjectList(snap);
   const activeProject = getActive();
   if (activeProject) {
-      renderEditor(activeProject);
+      renderEditor(activeProject, snap.settings);
   }
 }
 
@@ -159,12 +169,13 @@ function renderProjectList({ projects, activeId }) {
   });
 }
 
-function renderEditor(p) {
+function renderEditor(p, settings) {
   if (!p) return;
   els.title.value = p.title || "";
   els.logline.value = p.logline || "";
   els.synopsis.innerHTML = p.synopsis || "";
   els.projectType.value = p.type;
+  els.autosave.checked = settings.autosave;
 
   // Conditionally show/hide the Episodes tab
   const episodesTab = els.tabs.find(tab => tab.dataset.tab === "episodes");
