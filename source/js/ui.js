@@ -4,7 +4,7 @@ import {
   snapshot, getActive, setActive,
   createProject, updateProject, deleteActiveProject,
   addEpisode, removeEpisode, addScene, updateScene, removeScene,
-  addCharacter, removeCharacter,
+  addCharacter, removeCharacter, reorderProjects, reorderEpisodes, reorderCharacters,
   exportJSON, importJSON
 } from "./data.js";
 import { AISession } from "./api.js";
@@ -127,6 +127,9 @@ function bindEvents() {
   });
 
   attachToolbarListeners(els.synopsis.parentElement);
+  attachDragAndDropListeners(els.projectList, reorderProjects);
+  attachDragAndDropListeners(els.epList, reorderEpisodes);
+  attachDragAndDropListeners(els.charList, reorderCharacters);
 
   // Reactivity
   on("data:changed", renderAll);
@@ -146,6 +149,7 @@ function renderProjectList({ projects, activeId }) {
   projects.forEach(p => {
     const li = document.createElement("li");
     li.className = "list-item";
+    li.setAttribute('draggable', true);
     li.innerHTML = `
       <button class="link ${p.id === activeId ? "is-active" : ""}" data-id="${p.id}">
         ${escapeHTML(p.title)}
@@ -179,12 +183,13 @@ function renderEditor(p) {
 
 function renderEpisodes(p) {
   els.epList.innerHTML = "";
-  p.episodes.forEach(ep => {
+  p.episodes.forEach((ep, index) => {
     const li = document.createElement("li");
     li.className = "list-item";
+    li.setAttribute('draggable', true);
     li.innerHTML = `
       <div class="row">
-        <strong>#${ep.number}</strong>
+        <strong>#${index + 1}</strong>
         <input class="inline-input" value="${escapeAttr(ep.title)}" />
         <button class="btn btn--tiny" data-action="del">×</button>
       </div>
@@ -240,6 +245,7 @@ function renderCharacters(p) {
   p.characters.forEach(ch => {
     const li = document.createElement("li");
     li.className = "list-item";
+    li.setAttribute('draggable', true);
     li.innerHTML = `
       <div class="row">
         <input class="inline-input" value="${escapeAttr(ch.name)}" />
@@ -335,6 +341,60 @@ function attachToolbarListeners(editorElement) {
         if (command) {
             document.execCommand(command, false, null);
             editable.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+}
+
+function attachDragAndDropListeners(container, reorderFn) {
+    let dragEl = null;
+
+    container.addEventListener('dragstart', (e) => {
+        if (e.target.classList.contains('list-item')) {
+            dragEl = e.target;
+            setTimeout(() => {
+                e.target.classList.add('dragging');
+            }, 0);
+        }
+    });
+
+    container.addEventListener('dragend', (e) => {
+        if (dragEl) {
+            dragEl.classList.remove('dragging');
+            dragEl = null;
+        }
+    });
+
+    container.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const target = e.target.closest('.list-item');
+        if (!target) return;
+
+        const currentlyOver = container.querySelector('.drag-over');
+        if (currentlyOver) currentlyOver.classList.remove('drag-over');
+
+        target.classList.add('drag-over');
+    });
+
+    container.addEventListener('dragleave', (e) => {
+        const target = e.target.closest('.list-item');
+        if (target) {
+            target.classList.remove('drag-over');
+        }
+    });
+
+    container.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const dropTarget = e.target.closest('.list-item');
+
+        const currentlyOver = container.querySelector('.drag-over');
+        if (currentlyOver) currentlyOver.classList.remove('drag-over');
+
+        if (dragEl && dropTarget && dragEl !== dropTarget) {
+            const fromIndex = Array.from(container.children).indexOf(dragEl);
+            const toIndex = Array.from(container.children).indexOf(dropTarget);
+            if (fromIndex > -1 && toIndex > -1) {
+                reorderFn(fromIndex, toIndex);
+            }
         }
     });
 }

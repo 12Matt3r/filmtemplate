@@ -35,3 +35,7 @@ textarea, input[type="text"] { background:#0b0d11; color:var(--fg); border:1px s
 .scene-list { display: grid; gap: 12px; margin-top: 12px; padding-left: 16px; border-left: 2px solid #1f2328; }
 .scene-item { background: #0b0d11; padding: 10px; border-radius: 6px; border: 1px solid #2a2f36; display: grid; gap: 8px; }
 .scene-header { font-weight: bold; }
+
+/* Drag and Drop Styles */
+.list-item.dragging { opacity: 0.5; }
+.list-item.drag-over { border-left: 2px solid var(--accent); }

@@ -140,6 +140,33 @@ export const removeCharacter = (id) => {
   persist();
 };
 
+const reorderArray = (array, fromIndex, toIndex) => {
+  const [item] = array.splice(fromIndex, 1);
+  array.splice(toIndex, 0, item);
+};
+
+export const reorderProjects = (fromIndex, toIndex) => {
+    reorderArray(state.projects, fromIndex, toIndex);
+    persist();
+};
+
+export const reorderEpisodes = (fromIndex, toIndex) => {
+    const p = getActive();
+    if (!p) return;
+    reorderArray(p.episodes, fromIndex, toIndex);
+    p.episodes.forEach((e, i) => e.number = i + 1);
+    p.updatedAt = Date.now();
+    persist();
+};
+
+export const reorderCharacters = (fromIndex, toIndex) => {
+    const p = getActive();
+    if (!p) return;
+    reorderArray(p.characters, fromIndex, toIndex);
+    p.updatedAt = Date.now();
+    persist();
+};
+
 export const exportJSON = () => {
   const p = getActive(); if (!p) return null;
   return JSON.stringify(p, null, 2);
