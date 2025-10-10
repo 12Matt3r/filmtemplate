@@ -3,7 +3,7 @@ import { on, emit, debounce } from "./utils.js";
 import {
   snapshot, getActive, setActive,
   createProject, updateProject, deleteActiveProject,
-  addEpisode, removeEpisode,
+  addEpisode, removeEpisode, addScene, updateScene, removeScene,
   addCharacter, removeCharacter,
   exportJSON, importJSON
 } from "./data.js";
@@ -187,11 +187,17 @@ function renderEpisodes(p) {
         <button class="btn btn--tiny" data-action="del">×</button>
       </div>
       <textarea rows="3" class="block" placeholder="Episode outline…">${escapeHTML(ep.outline || "")}</textarea>
+      <div class="scene-controls">
+        <button class="btn btn--tiny" data-action="add-scene">Add Scene</button>
+      </div>
+      <ul class="scene-list"></ul>
     `;
-    const [titleInput, delBtn, outlineTa] = [
+    const [titleInput, delBtn, outlineTa, addSceneBtn, sceneList] = [
       li.querySelector("input"),
       li.querySelector('[data-action="del"]'),
-      li.querySelector("textarea")
+      li.querySelector("textarea"),
+      li.querySelector('[data-action="add-scene"]'),
+      li.querySelector('.scene-list')
     ];
     titleInput.addEventListener("input", debounce((e) => {
       const episode = p.episodes.find(item => item.id === ep.id);
@@ -207,7 +213,11 @@ function renderEpisodes(p) {
         updateProject({ episodes: p.episodes });
       }
     }, 200));
+    addSceneBtn.addEventListener("click", () => addScene(ep.id));
     delBtn.addEventListener("click", () => removeEpisode(ep.id));
+
+    renderScenes(sceneList, ep.id, ep.scenes);
+
     els.epList.appendChild(li);
   });
 }
@@ -254,6 +264,45 @@ function renderCharacters(p) {
     }, 200));
     delBtn.addEventListener("click", () => removeCharacter(ch.id));
     els.charList.appendChild(li);
+  });
+}
+
+function renderScenes(container, episodeId, scenes) {
+  container.innerHTML = "";
+  scenes.forEach(scene => {
+    const li = document.createElement("li");
+    li.className = "scene-item";
+    li.innerHTML = `
+      <div class="scene-header row">
+        <input class="inline-input slugline" value="${escapeAttr(scene.slugline)}" placeholder="INT. LOCATION - DAY" />
+        <button class="btn btn--tiny" data-action="del-scene">×</button>
+      </div>
+      <textarea class="block action" rows="3" placeholder="Action…">${escapeHTML(scene.action || "")}</textarea>
+      <textarea class="block dialogue" rows="3" placeholder="Dialogue…">${escapeHTML(scene.dialogue || "")}</textarea>
+    `;
+
+    const sluglineInput = li.querySelector(".slugline");
+    const actionTextarea = li.querySelector(".action");
+    const dialogueTextarea = li.querySelector(".dialogue");
+    const deleteBtn = li.querySelector("[data-action='del-scene']");
+
+    sluglineInput.addEventListener("input", debounce((e) => {
+      updateScene(episodeId, scene.id, { slugline: e.target.value });
+    }, 200));
+
+    actionTextarea.addEventListener("input", debounce((e) => {
+      updateScene(episodeId, scene.id, { action: e.target.value });
+    }, 200));
+
+    dialogueTextarea.addEventListener("input", debounce((e) => {
+      updateScene(episodeId, scene.id, { dialogue: e.target.value });
+    }, 200));
+
+    deleteBtn.addEventListener("click", () => {
+      removeScene(episodeId, scene.id);
+    });
+
+    container.appendChild(li);
   });
 }
 

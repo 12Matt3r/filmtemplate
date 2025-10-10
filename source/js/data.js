@@ -74,12 +74,48 @@ export const deleteActiveProject = () => {
   persist();
 };
 
+const defaultScene = () => ({
+  id: uid("scene"),
+  slugline: "INT. LOCATION - DAY",
+  action: "",
+  dialogue: ""
+});
+
 export const addEpisode = (title = "Episode") => {
   const p = getActive(); if (!p) return;
   const number = p.episodes.length + 1;
   p.episodes.push({ id: uid("ep"), title, number, outline: "", scenes: [] });
   p.updatedAt = Date.now();
   persist();
+};
+
+export const addScene = (episodeId) => {
+    const p = getActive();
+    if (!p) return;
+    const episode = p.episodes.find(e => e.id === episodeId);
+    if (!episode) return;
+    episode.scenes.push(defaultScene());
+    updateProject({ episodes: p.episodes });
+};
+
+export const updateScene = (episodeId, sceneId, patch) => {
+    const p = getActive();
+    if (!p) return;
+    const episode = p.episodes.find(e => e.id === episodeId);
+    if (!episode) return;
+    const scene = episode.scenes.find(s => s.id === sceneId);
+    if (!scene) return;
+    Object.assign(scene, patch);
+    updateProject({ episodes: p.episodes });
+};
+
+export const removeScene = (episodeId, sceneId) => {
+    const p = getActive();
+    if (!p) return;
+    const episode = p.episodes.find(e => e.id === episodeId);
+    if (!episode) return;
+    episode.scenes = episode.scenes.filter(s => s.id !== sceneId);
+    updateProject({ episodes: p.episodes });
 };
 
 export const removeEpisode = (id) => {
