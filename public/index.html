@@ -40,7 +40,13 @@
         </div>
         <div class="field">
           <label for="synopsis">Synopsis</label>
-          <textarea id="synopsis" rows="6" placeholder="High-level description…"></textarea>
+          <div class="rich-text-editor">
+            <div class="toolbar">
+              <button data-command="bold" class="btn btn--tiny"><b>B</b></button>
+              <button data-command="italic" class="btn btn--tiny"><i>I</i></button>
+            </div>
+            <div id="synopsis" class="editable" contenteditable="true" role="textbox" aria-multiline="true"></div>
+          </div>
         </div>
         <button id="generate-outline-btn" class="btn btn--primary">AI: Generate Outline</button>
         <div id="ai-output" class="output" aria-live="polite"></div>

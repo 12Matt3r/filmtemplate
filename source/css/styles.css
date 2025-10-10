@@ -16,6 +16,13 @@ body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system
 .row { display:flex; align-items:center; gap:8px; justify-content:space-between; }
 .inline-input { width:100%; background:#0b0d11; color:var(--fg); border:1px solid #1f2328; border-radius:6px; padding:6px 8px; }
 textarea, input[type="text"] { background:#0b0d11; color:var(--fg); border:1px solid #1f2328; border-radius:6px; padding:8px; width:100%; }
+
+/* Rich Text Editor Styles */
+.rich-text-editor { display: grid; gap: 6px; }
+.toolbar { display: flex; gap: 6px; }
+.editable { background:#0b0d11; color:var(--fg); border:1px solid #1f2328; border-radius:6px; padding:8px; width:100%; min-height: 80px; }
+.editable:focus { outline: 1px solid var(--accent); }
+
 .tabs { display:flex; gap:6px; margin:10px 0; border-bottom: 1px solid #1f2328; padding-bottom: 10px; }
 .tab { background: none; border:none; border-bottom: 2px solid transparent; border-radius: 0; padding:6px 12px; cursor:pointer; color:var(--muted); }
 .tab--active { color:var(--fg); border-bottom-color:var(--accent); }

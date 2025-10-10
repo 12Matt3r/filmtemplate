@@ -64,7 +64,7 @@ function bindEvents() {
   }, 200));
 
   els.synopsis.addEventListener("input", debounce((e) => {
-    updateProject({ synopsis: e.target.value });
+    updateProject({ synopsis: e.target.innerHTML });
   }, 200));
 
   els.projectType.addEventListener("change", (e) => {
@@ -126,6 +126,8 @@ function bindEvents() {
     if (confirm("Delete current project?")) deleteActiveProject();
   });
 
+  attachToolbarListeners(els.synopsis.parentElement);
+
   // Reactivity
   on("data:changed", renderAll);
 }
@@ -157,7 +159,7 @@ function renderEditor(p) {
   if (!p) return;
   els.title.value = p.title || "";
   els.logline.value = p.logline || "";
-  els.synopsis.value = p.synopsis || "";
+  els.synopsis.innerHTML = p.synopsis || "";
   els.projectType.value = p.type;
 
   // Conditionally show/hide the Episodes tab
@@ -186,19 +188,27 @@ function renderEpisodes(p) {
         <input class="inline-input" value="${escapeAttr(ep.title)}" />
         <button class="btn btn--tiny" data-action="del">×</button>
       </div>
-      <textarea rows="3" class="block" placeholder="Episode outline…">${escapeHTML(ep.outline || "")}</textarea>
+      <div class="rich-text-editor">
+        <div class="toolbar">
+          <button data-command="bold" class="btn btn--tiny"><b>B</b></button>
+          <button data-command="italic" class="btn btn--tiny"><i>I</i></button>
+        </div>
+        <div class="editable outline" contenteditable="true" role="textbox" aria-multiline="true">${ep.outline || ""}</div>
+      </div>
       <div class="scene-controls">
         <button class="btn btn--tiny" data-action="add-scene">Add Scene</button>
       </div>
       <ul class="scene-list"></ul>
     `;
-    const [titleInput, delBtn, outlineTa, addSceneBtn, sceneList] = [
+    const [titleInput, delBtn, outlineEditor, addSceneBtn, sceneList] = [
       li.querySelector("input"),
       li.querySelector('[data-action="del"]'),
-      li.querySelector("textarea"),
+      li.querySelector(".rich-text-editor"),
       li.querySelector('[data-action="add-scene"]'),
       li.querySelector('.scene-list')
     ];
+    const outlineEditable = outlineEditor.querySelector('.editable');
+
     titleInput.addEventListener("input", debounce((e) => {
       const episode = p.episodes.find(item => item.id === ep.id);
       if(episode) {
@@ -206,13 +216,16 @@ function renderEpisodes(p) {
         updateProject({ episodes: p.episodes });
       }
     }, 200));
-    outlineTa.addEventListener("input", debounce((e) => {
+
+    outlineEditable.addEventListener("input", debounce((e) => {
       const episode = p.episodes.find(item => item.id === ep.id);
       if(episode) {
-        episode.outline = e.target.value;
+        episode.outline = e.target.innerHTML;
         updateProject({ episodes: p.episodes });
       }
     }, 200));
+
+    attachToolbarListeners(outlineEditor);
     addSceneBtn.addEventListener("click", () => addScene(ep.id));
     delBtn.addEventListener("click", () => removeEpisode(ep.id));
 
@@ -304,6 +317,26 @@ function renderScenes(container, episodeId, scenes) {
 
     container.appendChild(li);
   });
+}
+
+function attachToolbarListeners(editorElement) {
+    const toolbar = editorElement.querySelector('.toolbar');
+    const editable = editorElement.querySelector('.editable');
+
+    if (!toolbar || !editable) return;
+
+    toolbar.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+
+        e.preventDefault();
+        const command = button.dataset.command;
+
+        if (command) {
+            document.execCommand(command, false, null);
+            editable.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
 }
 
 // — helpers
