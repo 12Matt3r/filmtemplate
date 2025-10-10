@@ -36,6 +36,7 @@ export const initUI = () => {
   els.charList = $("#character-list");
   els.generate = $("#generate-outline-btn");
   els.aiOut = $("#ai-output");
+  els.projectType = $("#project-type");
   els.autosave = $("#autosave-toggle");
   els.exportBtn = $("#export-json-btn");
   els.importBtn = $("#import-json-btn");
@@ -65,6 +66,10 @@ function bindEvents() {
   els.synopsis.addEventListener("input", debounce((e) => {
     updateProject({ synopsis: e.target.value });
   }, 200));
+
+  els.projectType.addEventListener("change", (e) => {
+    updateProject({ type: e.target.value });
+  });
 
   els.tabs.forEach(btn => {
     btn.addEventListener("click", () => {
@@ -153,6 +158,19 @@ function renderEditor(p) {
   els.title.value = p.title || "";
   els.logline.value = p.logline || "";
   els.synopsis.value = p.synopsis || "";
+  els.projectType.value = p.type;
+
+  // Conditionally show/hide the Episodes tab
+  const episodesTab = els.tabs.find(tab => tab.dataset.tab === "episodes");
+  if (episodesTab) {
+    episodesTab.hidden = (p.type === 'film');
+  }
+
+  // If the episodes tab is now hidden but was active, switch to the overview tab
+  if (episodesTab && episodesTab.hidden && episodesTab.classList.contains('tab--active')) {
+    els.tabs.find(tab => tab.dataset.tab === 'overview').click();
+  }
+
   renderEpisodes(p);
   renderCharacters(p);
 }
