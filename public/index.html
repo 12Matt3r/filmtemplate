@@ -2,89 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Script Studio</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="../source/css/styles.css" />
+  <base href="/" />
+  <style>/* tiny guard for visibility if JS dies */ .fatal{color:#b00;padding:16px;text-align:center} </style>
 </head>
 <body>
-  <header class="app-header">
-    <h1>Script Studio</h1>
-    <div>
-      <button id="save-btn" class="btn btn--primary" hidden>Save Changes</button>
-      <button id="new-project-btn" class="btn">New Project</button>
-    </div>
-  </header>
+  <div id="app"><!-- UI mounts here --></div>
 
-  <main class="grid">
-    <section aria-labelledby="projects-title" class="panel">
-      <h2 id="projects-title">Projects</h2>
-      <ul id="project-list" class="list"></ul>
-    </section>
+  <!-- Robust bootstrap with trace flag (?trace=1) -->
+  <script type="module">
+    (async () => {
+      const q = new URLSearchParams(location.search);
+      const trace = q.get('trace') === '1';
 
-    <section aria-labelledby="editor-title" class="panel">
-      <h2 id="editor-title">Editor</h2>
+      const log = (...args) => { if (trace) console.log('[BOOT]', ...args); };
 
-      <div class="field">
-        <label for="project-title">Title</label>
-        <input id="project-title" type="text" placeholder="Series or Film Title" />
-      </div>
+      try {
+        const { load } = await import('../source/js/data.js');
+        const { initUI } = await import('../source/js/ui.js');
 
-      <div class="tabs">
-        <button data-tab="overview" class="tab tab--active">Overview</button>
-        <button data-tab="episodes" class="tab">Episodes</button>
-        <button data-tab="characters" class="tab">Characters</button>
-        <button data-tab="settings" class="tab">Settings</button>
-      </div>
+        log('Calling data.load()');
+        await load();
 
-      <div id="tab-overview" class="tabpane tabpane--active">
-        <div class="field">
-          <label for="logline">Logline</label>
-          <textarea id="logline" rows="3" placeholder="One-sentence hook…"></textarea>
-        </div>
-        <div class="field">
-          <label for="synopsis">Synopsis</label>
-          <div class="rich-text-editor">
-            <div class="toolbar">
-              <button data-command="bold" class="btn btn--tiny"><b>B</b></button>
-              <button data-command="italic" class="btn btn--tiny"><i>I</i></button>
-            </div>
-            <div id="synopsis" class="editable" contenteditable="true" role="textbox" aria-multiline="true"></div>
-          </div>
-        </div>
-        <button id="generate-outline-btn" class="btn btn--primary">AI: Generate Outline</button>
-        <div id="ai-output" class="output" aria-live="polite"></div>
-      </div>
+        log('Calling ui.initUI()');
+        await initUI({ mount: document.getElementById('app') });
 
-      <div id="tab-episodes" class="tabpane">
-        <button id="add-episode-btn" class="btn">Add Episode</button>
-        <ul id="episode-list" class="list"></ul>
-      </div>
-
-      <div id="tab-characters" class="tabpane">
-        <button id="add-character-btn" class="btn">Add Character</button>
-        <ul id="character-list" class="list"></ul>
-      </div>
-
-      <div id="tab-settings" class="tabpane">
-        <div class="field">
-          <label for="project-type">Project Type</label>
-          <select id="project-type">
-            <option value="series">Series</option>
-            <option value="film">Film</option>
-          </select>
-        </div>
-        <label class="row">
-          <span>Autosave</span>
-          <input id="autosave-toggle" type="checkbox" checked />
-        </label>
-        <button id="export-json-btn" class="btn">Export JSON</button>
-        <input id="import-json-input" type="file" accept="application/json" hidden />
-        <button id="import-json-btn" class="btn">Import JSON</button>
-        <button id="delete-project-btn" class="btn btn--danger">Delete Project</button>
-      </div>
-    </section>
-  </main>
-
-  <script type="module" src="../source/js/main.js"></script>
+        log('Boot OK');
+      } catch (err) {
+        console.error('BOOT FATAL:', err);
+        document.body.innerHTML = `
+          <div class="fatal">
+            <h1>Fatal Error</h1>
+            <p>${String(err && err.message || err)}</p>
+            <p>Open Console for details.</p>
+          </div>`;
+      }
+    })();
+  </script>
 </body>
 </html>
