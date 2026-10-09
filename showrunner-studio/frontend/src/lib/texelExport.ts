@@ -6,11 +6,17 @@ export interface TexelShotPlan {
   title: string;
   prompt: string;
   duration_seconds: number;
+  motion_prompt?: string;
 }
 
 export interface TexelShot extends TexelShotPlan {
   status: "planned" | "generating" | "ready" | "approved" | "error" | "interrupted";
   image_url: string | null;
+  clip_url: string | null;
+  video_status?: "planned" | "generating" | "ready" | "error" | "interrupted";
+  video_error?: string | null;
+  video_progress?: number;
+  video_job?: { job_id: string; model_type: string } | null;
   error: string | null;
 }
 
@@ -21,6 +27,7 @@ export interface TexelTrailer {
   status: "draft" | "rendering" | "complete" | "error";
   shots: TexelShot[];
   video_url: string | null;
+  animated?: boolean;
   audio_name: string | null;
   error: string | null;
 }
@@ -28,6 +35,8 @@ export interface TexelTrailer {
 export interface TexelCapabilities {
   configured: boolean;
   image_model: string;
+  video_model: string;
+  video_generation: boolean;
   ffmpeg_available: boolean;
   audio_available: boolean;
 }
@@ -53,7 +62,7 @@ export function compileTexelShots(show: ShowMeta, scenes: SceneEntity[], sets: S
       `Opening action beat: ${action.slice(0, 1800)}`,
       scene.sceneNotes ? `Director notes: ${scene.sceneNotes.slice(0, 300)}` : "",
     ].filter(Boolean).join("\n\n");
-    return { id: crypto.randomUUID(), scene_id: scene.id, title: scene.sceneName.slice(0, 160) || "Untitled scene", prompt, duration_seconds: 6 };
+    return { id: crypto.randomUUID(), scene_id: scene.id, title: scene.sceneName.slice(0, 160) || "Untitled scene", prompt, duration_seconds: 6, motion_prompt: `Animate the approved keyframe as one continuous cinematic shot. Preserve the cast, setting, and visual style. Natural movement, no cuts or text.\n\nAction: ${scene.action.slice(0, 3500)}${scene.sceneNotes ? `\n\nDirector notes: ${scene.sceneNotes.slice(0, 1000)}` : ""}` };
   });
 }
 

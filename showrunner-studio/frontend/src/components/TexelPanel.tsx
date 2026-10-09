@@ -28,7 +28,7 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
   const mounted = useRef(true);
   const requestId = useRef(crypto.randomUUID());
   const active = trailers.find((trailer) => trailer.id === activeId) ?? null;
-  const running = active?.status === "rendering" || active?.shots.some((shot) => shot.status === "generating");
+  const running = active?.status === "rendering" || active?.shots.some((shot) => shot.status === "generating" || shot.video_status === "generating");
 
   const scenes = useLiveQuery(async () => {
     const episodes = await db.episodes.where("showId").equals(show.id).sortBy("order");
@@ -105,22 +105,32 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
   const generate = async (shot: TexelShot, prompt: string) => {
     if (!active) return;
     if (shot.status !== "planned" && !await confirm({
-      message: "Regenerate this keyframe? This sends one new paid Texel request and clears its approval. If the previous call was interrupted, check Texel billing first.",
+      message: "Regenerate this keyframe? This sends one new paid Texel image request and clears its approval and generated clip. If the previous call was interrupted, check Texel billing first.",
       confirmLabel: "Regenerate",
     })) return;
     await run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/shots/${shot.id}/generate`, jsonRequest({ prompt })));
+  };
+
+  const animate = async (shot: TexelShot, prompt: string) => {
+    if (!active) return;
+    if ((shot.video_job || shot.video_status === "error" || shot.video_status === "interrupted") && !await confirm({
+      message: "Generate a new clip? This sends one paid Texel video request. Resume an existing job to check or download it without generating again. Check billing first if its job ID is missing.",
+      confirmLabel: "Generate new clip",
+    })) return;
+    await run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/shots/${shot.id}/animate`, jsonRequest({ prompt })));
   };
 
   return (
     <div className="space-y-4 text-[12px]">
       <div>
         <div className="flex items-center gap-2"><Film size={16} className="text-amber-300" /><h2 className="font-semibold text-neutral-100">Outline to Trailer</h2></div>
-        <p className="mt-2 leading-relaxed text-neutral-400">Choose up to three scenes. Review prompts, generate Texel keyframes, approve them, and export a storyboard trailer with title cards and optional audio.</p>
-        <p className="mt-1 text-[11px] text-neutral-500">Still-image cut · 16:9 · 720p MP4 · no generated animation or speech</p>
+        <p className="mt-2 leading-relaxed text-neutral-400">Choose up to three scenes. Review prompts, generate Texel keyframes, approve them, then animate each scene and export a trailer with title cards and optional audio.</p>
+        <p className="mt-1 text-[11px] text-neutral-500">Texel images + FramePack animation · 16:9 · 720p MP4</p>
       </div>
 
       {capabilities && <div className="rounded-md border border-neutral-800 p-2.5 text-[11px] leading-relaxed text-neutral-400">
         <p>Image model: <span className="text-neutral-200">{capabilities.image_model}</span></p>
+        <p>Video model: <span className="text-neutral-200">{capabilities.video_model}</span></p>
         {!capabilities.configured && <p className="mt-1 text-amber-300">Texel generation is unavailable. Configure TEXEL_API_KEY on the backend. You can prepare and save shot plans now.</p>}
         {!capabilities.ffmpeg_available && <p className="mt-1 text-amber-300">Install FFmpeg on the backend to enable MP4 export.</p>}
       </div>}
@@ -145,7 +155,7 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
         {draft.map((shot, index) => <Field key={shot.id} label={`${index + 1}. ${shot.title}`}>
           <TextArea aria-label={`Keyframe prompt for ${shot.title}`} value={shot.prompt} rows={7} maxLength={8000}
             onChange={(event) => setDraft((current) => current.map((item) => item.id === shot.id ? { ...item, prompt: event.target.value } : item))} />
-          <span className="text-[11px] text-neutral-500">{shot.duration_seconds}s still hold</span>
+          <span className="text-[11px] text-neutral-500">{shot.duration_seconds}s scene cut</span>
         </Field>)}
         <Button variant="primary" className="w-full" disabled={busy || draft.some((shot) => !shot.prompt.trim())}
           onClick={() => void run(() => texelRequest<TexelTrailer>("/trailers", jsonRequest({ request_id: requestId.current, show_id: show.id, show_title: show.title.slice(0, 160), shots: draft })))}>
@@ -164,7 +174,10 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
         <div className="flex items-center justify-between"><h3 className="font-medium text-neutral-100">Keyframe review</h3><Chip tone="amber">{active.status}</Chip></div>
         <p className="text-[11px] text-neutral-500">Each Generate sends one Texel image request. Completed images stay saved. Review the output before approval.</p>
         {active.shots.map((shot) => <ShotCard key={`${active.id}-${shot.id}`} shot={shot} busy={busy || active.status === "rendering"}
-          configured={!!capabilities?.configured} onGenerate={(prompt) => void generate(shot, prompt)}
+          configured={!!capabilities?.configured} videoAvailable={!!capabilities?.video_generation}
+          onAnimate={(prompt) => void animate(shot, prompt)}
+          onResume={() => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/shots/${shot.id}/resume`, { method: "POST" }))}
+          onGenerate={(prompt) => void generate(shot, prompt)}
           onApprove={() => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/shots/${shot.id}/approval`, jsonRequest({ approved: shot.status !== "approved" })))} />)}
 
         {capabilities?.audio_available && <div className="space-y-2 rounded-md border border-neutral-800 p-3">
@@ -184,25 +197,31 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
             : <p className="text-[11px] text-neutral-500">Without an upload, the trailer exports silently. Uploaded audio loops to fit the cut.</p>}
         </div>}
         {active.error && <p role="alert" className="text-red-300">{active.error}</p>}
-        <Button variant="primary" className="w-full" disabled={busy || !!running || !capabilities?.ffmpeg_available || !active.shots.every((shot) => shot.status === "approved")}
+        <Button variant="primary" className="w-full" disabled={busy || !!running || !capabilities?.ffmpeg_available || !active.shots.every((shot) => shot.status === "approved" && shot.video_status === "ready")}
+          onClick={() => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/render`, jsonRequest({ animated: true })))}>
+          {active.status === "rendering" ? <Spinner /> : <Film size={14} />} Assemble animated trailer
+        </Button>
+        <Button className="w-full" disabled={busy || !!running || !capabilities?.ffmpeg_available || !active.shots.every((shot) => shot.status === "approved")}
           onClick={() => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/render`, { method: "POST" }))}>
           {active.status === "rendering" ? <Spinner /> : <Film size={14} />}
-          {active.status === "rendering" ? "Assembling MP4…" : "Assemble approved keyframes"}
+          {active.status === "rendering" ? "Assembling MP4…" : "Export still-image storyboard"}
         </Button>
         {active.video_url && <div className="space-y-2">
-          <video controls preload="metadata" src={active.video_url} aria-label={`${active.show_title} storyboard trailer`} className="w-full rounded-md border border-neutral-800" />
-          <a href={`${active.video_url}?download=true`} className="block rounded-md bg-emerald-600 p-2 text-center font-medium text-neutral-950">Download storyboard MP4</a>
+          <video controls preload="metadata" src={active.video_url} aria-label={`${active.show_title} ${active.animated ? "animated" : "storyboard"} trailer`} className="w-full rounded-md border border-neutral-800" />
+          <a href={`${active.video_url}?download=true`} className="block rounded-md bg-emerald-600 p-2 text-center font-medium text-neutral-950">Download {active.animated ? "trailer" : "storyboard"} MP4</a>
         </div>}
       </div>}
     </div>
   );
 }
 
-function ShotCard({ shot, busy, configured, onGenerate, onApprove }: {
-  shot: TexelShot; busy: boolean; configured: boolean; onGenerate: (prompt: string) => void; onApprove: () => void;
+function ShotCard({ shot, busy, configured, videoAvailable, onGenerate, onApprove, onAnimate, onResume }: {
+  shot: TexelShot; busy: boolean; configured: boolean; videoAvailable: boolean; onGenerate: (prompt: string) => void; onApprove: () => void;
+  onAnimate: (prompt: string) => void; onResume: () => void;
 }) {
   const [prompt, setPrompt] = useState(shot.prompt);
-  const generating = shot.status === "generating";
+  const [motion, setMotion] = useState(shot.motion_prompt || "Animate this keyframe with natural subject movement and a slow cinematic push in. Preserve cast, setting, and lighting. One continuous shot, no text.");
+  const generating = shot.status === "generating" || shot.video_status === "generating";
   const changed = prompt !== shot.prompt;
   return <div className="space-y-2 rounded-lg border border-neutral-800 p-3">
     <div className="flex items-center justify-between gap-2"><h4 className="font-medium text-neutral-200">{shot.title}</h4><Chip tone={shot.status === "approved" ? "green" : "dim"}>{shot.status}</Chip></div>
@@ -220,5 +239,20 @@ function ShotCard({ shot, busy, configured, onGenerate, onApprove }: {
         <Check size={13} />{shot.status === "approved" ? "Undo approval" : "Approve"}
       </Button>}
     </div>
+    {shot.status === "approved" && <div className="space-y-2 border-t border-neutral-800 pt-3">
+      <Field label="Motion prompt">
+        <TextArea aria-label={`Motion prompt for ${shot.title}`} value={motion} rows={4} maxLength={8000} disabled={busy || generating} onChange={(event) => setMotion(event.target.value)} />
+      </Field>
+      {shot.video_error && <p role="alert" className="text-[11px] text-amber-300">{shot.video_error}</p>}
+      {shot.video_status === "generating" && <p role="status" className="text-amber-300">Animating… {shot.video_progress ?? 0}%</p>}
+      {shot.clip_url && <video controls preload="metadata" src={shot.clip_url} aria-label={`Animated clip for ${shot.title}`} className="w-full rounded border border-neutral-800" />}
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy || generating || !configured || !videoAvailable || !motion.trim() || changed} onClick={() => onAnimate(motion)}>
+          <Film size={13} />{shot.video_job || shot.video_status === "error" ? "Generate new clip" : "Animate keyframe"}
+        </Button>
+        {shot.video_job && shot.video_status === "interrupted" && <Button disabled={busy || generating || !configured || !videoAvailable} onClick={onResume}>Resume saved job · no new generation</Button>}
+      </div>
+      <p className="text-[11px] text-neutral-500">Animate sends one paid video request. Resume checks the saved job. Review your clip before assembling.</p>
+    </div>}
   </div>;
 }

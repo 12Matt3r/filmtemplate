@@ -1,12 +1,12 @@
 # Showrunner Studio
 
-The primary app lives in `showrunner-studio/`: a React/TypeScript production editor with a FastAPI backend, scene drafting, script critique, Showrunner/Seedance prompt exports, and a Texel storyboard-trailer workflow.
+The primary app lives in `showrunner-studio/`: a React/TypeScript production editor with a FastAPI backend, scene drafting, script critique, Showrunner/Seedance prompt exports, and a Texel image-to-video trailer workflow.
 
 ## Start the current app
 
-Install Node 22.12+ (or 24+), Python 3.12+, uv, and FFmpeg. Copy `showrunner-studio/.env.example` to `showrunner-studio/.env`, set a server-side `TEXEL_API_KEY` to enable image generation, and run `./start.sh`. Open http://localhost:3001. Without a Texel key you can still write, import, export, and prepare trailer plans.
+Install Node 22.12+ (or 24+), Python 3.12+, uv, and FFmpeg. Copy `showrunner-studio/.env.example` to `showrunner-studio/.env`, set a server-side `TEXEL_API_KEY` to enable image and video generation, and run `./start.sh`. Open http://localhost:3001. Without a Texel key you can still write, import, export, and prepare trailer plans.
 
-See [Outline to Trailer setup and implementation notes](showrunner-studio/TEXEL.md) for the workflow, persistence, API contract, tests, and current limits. The initial MP4 output is a clearly labeled **storyboard trailer made from still keyframes**, with optional uploaded audio.
+See [Outline to Trailer setup and implementation notes](showrunner-studio/TEXEL.md) for the workflow, persistence, API contract, tests, and current limits. Approve keyframes, animate them with Texel FramePack, then assemble a 720p trailer with optional uploaded audio. A still-image storyboard export is also available.
 
 The older static Script Studio prototype remains in `public/` and `source/`, reachable through the backend at `/legacy/public/`. The historical documentation below describes that prototype, not the current primary app.
 

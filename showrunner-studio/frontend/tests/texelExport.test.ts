@@ -16,6 +16,8 @@ test("keyframes expand the registered visual world, set, and cast for one beat",
   assert.match(prompt, /red-jacketed operator/);
   assert.match(prompt, /reaches toward a monitor/);
   assert.doesNotMatch(prompt, /building burns down/);
+  assert.match(result[0].motion_prompt ?? "", /building burns down/);
+  assert.match(result[0].motion_prompt ?? "", /Blue practical lights/);
   assert.equal(result[0].scene_id, scene.id);
   assert.equal(result[0].duration_seconds, 6);
 });

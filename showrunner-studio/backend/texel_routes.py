@@ -2,6 +2,7 @@
 import os
 import shutil
 import time
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
-from texel_client import TexelClient
+from texel_client import TexelClient, TexelError, TexelJobFailed
 from trailer_render import assemble, validate_audio
 from trailer_store import TrailerStore
 
@@ -22,6 +23,7 @@ class ShotPlan(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     prompt: str = Field(min_length=1, max_length=8000)
     duration_seconds: int = Field(default=6, ge=5, le=10)
+    motion_prompt: str = Field(default="", max_length=8000)
 
 
 class TrailerPlan(BaseModel):
@@ -43,6 +45,14 @@ class GenerateShot(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
 
 
+class AnimateShot(BaseModel):
+    prompt: str = Field(min_length=1, max_length=8000)
+
+
+class RenderTrailer(BaseModel):
+    animated: bool = False
+
+
 class ShotApproval(BaseModel):
     approved: bool
 
@@ -50,13 +60,15 @@ class ShotApproval(BaseModel):
 class TrailerService:
     def __init__(self, root: Path):
         self.store = TrailerStore(root)
+        self.stopping = threading.Event()
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="texel-studio")
 
     def create(self, plan: TrailerPlan):
         body = {"id": uuid.uuid4().hex, "request_id": plan.request_id, "show_id": plan.show_id,
                 "show_title": plan.show_title, "plan": plan.model_dump(), "status": "draft", "error": None,
                 "video_asset": None, "audio_asset": None, "audio_name": None, "created_at": time.time(), "updated_at": time.time(),
-                "shots": [{**s.model_dump(), "status": "planned", "asset": None, "error": None, "operation_id": None} for s in plan.shots]}
+                "shots": [{**s.model_dump(), "status": "planned", "asset": None, "error": None, "operation_id": None, "video_status": "planned", "video_asset": None,
+                           "video_job": None, "video_error": None, "video_progress": 0} for s in plan.shots]}
         return self.store.create(body)
 
     @staticmethod
@@ -86,9 +98,9 @@ class TrailerService:
         def start(body):
             self.editable(body)
             shot = self.shot(body, shot_id)
-            if shot["status"] == "generating":
+            if shot["status"] == "generating" or shot.get("video_status") == "generating":
                 raise ValueError("This shot is already generating; no second request was sent.")
-            shot.update(status="generating", prompt=prompt, error=None, asset=None, operation_id=operation)
+            shot.update(status="generating", prompt=prompt, error=None, asset=None, operation_id=operation, video_status="planned", video_asset=None, video_job=None, video_error=None, video_progress=0)
             self.invalidate(body)
         body = self.store.mutate(trailer_id, start)
         self.executor.submit(self._generate, trailer_id, shot_id, prompt, operation)
@@ -108,7 +120,6 @@ class TrailerService:
             self.store.mutate(trailer_id, finish)
         except Exception as exc:
             # Provider output and secrets are never returned as raw error bodies.
-            from texel_client import TexelError
             message = str(exc) if isinstance(exc, TexelError) else "Keyframe generation failed while saving the result. Check Texel before retrying."
             def fail(body):
                 shot = self.shot(body, shot_id)
@@ -116,17 +127,74 @@ class TrailerService:
                     shot.update(status="error", error=message)
             self.store.mutate(trailer_id, fail)
 
+    def animate(self, trailer_id, shot_id, prompt, resume=False):
+        if not os.environ.get("TEXEL_API_KEY"):
+            raise ValueError("Set TEXEL_API_KEY on the backend before generating media.")
+        if not shutil.which("ffprobe"):
+            raise ValueError("Install ffprobe on the backend before generating clips.")
+        if not prompt.strip() and not resume:
+            raise ValueError("Enter a motion prompt before generating a clip.")
+        operation = uuid.uuid4().hex
+        def start(body):
+            self.editable(body)
+            shot = self.shot(body, shot_id)
+            if shot["status"] != "approved" or not shot["asset"]:
+                raise ValueError("Approve this keyframe before animating it.")
+            if shot.get("video_status") == "generating":
+                raise ValueError("This clip is already generating; no second request was sent.")
+            if resume and (not shot.get("video_job") or shot.get("video_status") != "interrupted"):
+                raise ValueError("There is no interrupted video job to resume.")
+            if not resume:
+                shot.update(video_job=None, motion_prompt=prompt, video_progress=0)
+            shot.update(video_status="generating", video_asset=None, video_error=None, video_operation_id=operation)
+            self.invalidate(body)
+        body = self.store.mutate(trailer_id, start)
+        self.executor.submit(self._animate, trailer_id, shot_id, operation)
+        return body
+
+    def _animate(self, trailer_id, shot_id, operation):
+        try:
+            client = TexelClient()
+            shot = self.shot(self.store.get(trailer_id), shot_id)
+            job = shot.get("video_job")
+            folder = self.store.root / trailer_id
+            if not job:
+                job = client.start_video(shot["motion_prompt"], (folder / shot["asset"]).read_bytes(), shot["duration_seconds"])
+                # Save the provider ID before polling or downloading. Resume only GETs.
+                self.store.mutate(trailer_id, lambda b: self.shot(b, shot_id).update(video_job=job))
+            deadline = time.monotonic() + 600
+            while not self.stopping.is_set() and time.monotonic() < deadline:
+                status = client.video_status(job["job_id"], job["model_type"])
+                self.store.mutate(trailer_id, lambda b: self.shot(b, shot_id).update(video_progress=status["progress"]))
+                if status["completed"]:
+                    filename = f"clip-{operation}.mp4"
+                    client.download_video(status["url"], folder / filename)
+                    self.store.mutate(trailer_id, lambda b: self.shot(b, shot_id).update(video_status="ready", video_asset=filename, video_error=None))
+                    return
+                self.stopping.wait(5)
+            raise TexelError("Polling paused. Resume the saved job to check it again without another generation charge.")
+        except Exception as exc:
+            message = str(exc) if isinstance(exc, TexelError) else "Clip processing failed. Resume the saved job before generating again."
+            def fail(body):
+                shot = self.shot(body, shot_id)
+                if shot.get("video_operation_id") == operation:
+                    resumable = bool(shot.get("video_job")) and not isinstance(exc, TexelJobFailed)
+                    shot.update(video_status="interrupted" if resumable else "error", video_error=message)
+            self.store.mutate(trailer_id, fail)
+
     def approve(self, trailer_id, shot_id, approved):
         def change(body):
             self.editable(body)
             shot = self.shot(body, shot_id)
+            if shot.get("video_status") == "generating":
+                raise ValueError("Wait for clip generation before changing keyframe approval.")
             if shot["status"] not in ("ready", "approved") or not shot["asset"]:
                 raise ValueError("Generate a valid keyframe before approving it.")
             shot["status"] = "approved" if approved else "ready"
             self.invalidate(body)
         return self.store.mutate(trailer_id, change)
 
-    def render(self, trailer_id):
+    def render(self, trailer_id, animated=False):
         if not shutil.which("ffmpeg"):
             raise ValueError("Install FFmpeg on the backend to export MP4.")
         render_id = uuid.uuid4().hex
@@ -134,7 +202,11 @@ class TrailerService:
             self.editable(body)
             if not all(s["status"] == "approved" and s["asset"] for s in body["shots"]):
                 raise ValueError("Approve every keyframe before assembling the trailer.")
-            body.update(status="rendering", error=None, video_asset=None, render_id=render_id)
+            if any(s.get("video_status") == "generating" for s in body["shots"]):
+                raise ValueError("Wait for clip generation before assembling the trailer.")
+            if animated and not all(s.get("video_status") == "ready" and s.get("video_asset") for s in body["shots"]):
+                raise ValueError("Generate every scene clip before assembling an animated trailer.")
+            body.update(status="rendering", error=None, video_asset=None, render_id=render_id, animated=animated)
         body = self.store.mutate(trailer_id, start)
         self.executor.submit(self._render, body, render_id)
         return body
@@ -187,10 +259,11 @@ def service():
 async def lifespan(_app):
     service().store.recover()
     yield
+    service().stopping.set()
     service().executor.shutdown(wait=True)
 
 
-router = APIRouter(prefix="/api/texel", tags=["Texel storyboard trailers"], lifespan=lifespan)
+router = APIRouter(prefix="/api/texel", tags=["Texel trailers"], lifespan=lifespan)
 
 
 def _call(fn, *args):
@@ -206,14 +279,14 @@ def public_body(body):
     def media(asset):
         return f"/api/texel/trailers/{body['id']}/media/{asset}" if asset else None
     return {**body, "video_url": media(body["video_asset"]),
-            "shots": [{**s, "image_url": media(s["asset"])} for s in body["shots"]]}
+            "shots": [{**s, "image_url": media(s["asset"]), "clip_url": media(s.get("video_asset"))} for s in body["shots"]]}
 
 
 @router.get("/capabilities")
 def capabilities():
-    return {"configured": bool(os.environ.get("TEXEL_API_KEY")), "image_model": os.environ.get("TEXEL_IMAGE_MODEL", "runwayml/stable-diffusion-v1-5"),
+    return {"configured": bool(os.environ.get("TEXEL_API_KEY")), "image_model": os.environ.get("TEXEL_IMAGE_MODEL", "juggernautXL_v8Rundiffusion.safetensors"),
             "ffmpeg_available": bool(shutil.which("ffmpeg")), "audio_available": bool(shutil.which("ffprobe")),
-            "mode": "storyboard", "max_shots": 3, "video_generation": False, "audio_generation": False}
+            "video_model": "FramePack", "mode": "trailer", "max_shots": 3, "video_generation": bool(shutil.which("ffprobe")), "audio_generation": False}
 
 
 @router.post("/trailers", status_code=201)
@@ -236,14 +309,24 @@ def generate(trailer_id: str, shot_id: str, req: GenerateShot):
     return public_body(_call(service().generate, trailer_id, shot_id, req.prompt))
 
 
+@router.post("/trailers/{trailer_id}/shots/{shot_id}/animate", status_code=202)
+def animate(trailer_id: str, shot_id: str, req: AnimateShot):
+    return public_body(_call(service().animate, trailer_id, shot_id, req.prompt))
+
+
+@router.post("/trailers/{trailer_id}/shots/{shot_id}/resume", status_code=202)
+def resume(trailer_id: str, shot_id: str):
+    return public_body(_call(service().animate, trailer_id, shot_id, "", True))
+
+
 @router.post("/trailers/{trailer_id}/shots/{shot_id}/approval")
 def approve(trailer_id: str, shot_id: str, req: ShotApproval):
     return public_body(_call(service().approve, trailer_id, shot_id, req.approved))
 
 
 @router.post("/trailers/{trailer_id}/render", status_code=202)
-def render(trailer_id: str):
-    return public_body(_call(service().render, trailer_id))
+def render(trailer_id: str, req: RenderTrailer = RenderTrailer()):
+    return public_body(_call(service().render, trailer_id, req.animated))
 
 
 @router.post("/trailers/{trailer_id}/audio")
@@ -268,7 +351,7 @@ def remove_audio(trailer_id: str):
 @router.get("/trailers/{trailer_id}/media/{filename}")
 def media(trailer_id: str, filename: str, download: bool = False):
     body = _call(service().store.get, trailer_id)
-    allowed = {s["asset"] for s in body["shots"]} | {body["video_asset"]}
+    allowed = {s["asset"] for s in body["shots"]} | {s.get("video_asset") for s in body["shots"]} | {body["video_asset"]}
     if filename not in allowed or not (service().store.root / trailer_id / filename).is_file():
         raise HTTPException(404, "Media not found.")
     return FileResponse(service().store.root / trailer_id / filename,

@@ -1,11 +1,12 @@
-"""Documented Texel image API. No guessed video/audio model requests."""
+"""HTTPX adapter for the official Texel Python SDK production contracts."""
 import base64
 import io
 import ipaddress
 import json
 import os
+import secrets
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 import httpx
 from PIL import Image
@@ -103,25 +104,104 @@ def decode_image(body: bytes, content_type: str, client: httpx.Client) -> bytes:
         raise TexelError("Texel output was not a valid supported image.") from exc
 
 
+API_BASE = "https://api.prod.texel.ai/v1"
+VIDEO_MODEL = {"name": "FramePackI2V_HY_fp8_e4m3fn", "type": "FRAMEPACK_VIDEO", "params": {}}
+
+
+class TexelJobFailed(TexelError):
+    pass
+
+
 class TexelClient:
     def __init__(self):
         self.key = os.environ.get("TEXEL_API_KEY", "")
-        self.model = os.environ.get("TEXEL_IMAGE_MODEL", "runwayml/stable-diffusion-v1-5")
+        self.model = os.environ.get("TEXEL_IMAGE_MODEL", "juggernautXL_v8Rundiffusion.safetensors")
 
-    def generate(self, prompt: str) -> bytes:
+    def _request(self, endpoint, payload=None, method="POST"):
         if not self.key:
-            raise TexelError("Set TEXEL_API_KEY on the backend before generating keyframes.")
-        # The official OpenAPI schema marks negative_prompt as required, even
-        # though it allows null. Keep the documented property in every request.
-        payload = {"prompt": prompt, "negative_prompt": "text, watermark, blurry, malformed anatomy", "model": self.model,
-                   "count": 1, "steps": 30, "guidance_scale": 7.5, "width": 768, "height": 432}
+            raise TexelError("Set TEXEL_API_KEY on the backend before generating media.")
         try:
             with httpx.Client(timeout=httpx.Timeout(180, connect=20), follow_redirects=False) as client:
-                with client.stream("POST", "https://api.texel.ai/stable_diffusion/",
-                                   headers={"Authorization": f"Bearer {self.key}"}, json=payload) as response:
-                    if response.status_code >= 400:
-                        raise TexelError(f"Texel returned HTTP {response.status_code}. Check access, credits, and the configured image model. No automatic retry was sent.")
+                with client.stream(method, API_BASE + endpoint, headers={"Authorization": f"Bearer {self.key}"}, json=payload) as response:
+                    if response.status_code >= 400 or response.is_redirect:
+                        raise TexelError(f"Texel returned HTTP {response.status_code}. Check access, credits, and the configured model. No generation retry was sent.")
                     body = _read(response)
-                    return decode_image(body, response.headers.get("content-type", ""), client)
+                    try:
+                        value = json.loads(body)
+                    except ValueError as exc:
+                        raise TexelError("Texel returned invalid result JSON.") from exc
+                    if not isinstance(value, dict):
+                        raise TexelError("Texel returned an unsupported result format.")
+                    return value
         except httpx.HTTPError as exc:
-            raise TexelError("Texel request was interrupted or timed out. It may have been billed. Check your Texel dashboard before manually retrying.") from exc
+            raise TexelError("Texel request was interrupted or timed out. It may have been billed. Check your Texel dashboard before manually retrying generation.") from exc
+
+    def generate(self, prompt: str) -> bytes:
+        payload = {"model": {"name": self.model, "type": "SDXL"},
+                   "request": {"prompt": prompt, "negative_prompt": "text, watermark, blurry, malformed anatomy",
+                               "cfg_scale": 7.0, "denoising_strength": 0.75, "steps": 20,
+                               "width": 768, "height": 432, "seed": secrets.randbelow(2147483646) + 1},
+                   "params": {}, "timeout": 120, "callback": {"url": ""}}
+        result = self._request("/sd_server/txt2img", payload)
+        with httpx.Client(timeout=60, follow_redirects=False) as client:
+            return decode_image(json.dumps(result).encode(), "application/json", client)
+
+    def start_video(self, prompt: str, image: bytes, duration: int) -> dict:
+        payload = {"model": VIDEO_MODEL,
+                   "request": {"prompt": prompt, "cfg_scale": 3.0, "steps": 30, "width": 768, "height": 432,
+                               "length": float(duration), "video_codec": "video/h264-mp4",
+                               "seed": secrets.randbelow(2147483646) + 1,
+                               "init_images": [base64.b64encode(image).decode()]}}
+        result = self._request("/sd_server/img2vid", payload)
+        job_id = result.get("id")
+        if not isinstance(job_id, str) or not job_id or len(job_id) > 200:
+            raise TexelError("Texel returned no valid video job ID. Check the dashboard before generating again.")
+        return {"job_id": job_id, "model_type": VIDEO_MODEL["type"]}
+
+    def video_status(self, job_id: str, model_type: str) -> dict:
+        if model_type != VIDEO_MODEL["type"]:
+            raise TexelError("Unsupported saved Texel video model type.")
+        result = self._request(f"/sd_server/status/{quote(job_id, safe='')}/{model_type}", method="GET")
+        status = result.get("job_status")
+        if status in ("failed", "error") or result.get("error_message"):
+            raise TexelJobFailed("Texel reported that this video job failed. Review it in the dashboard before generating again.")
+        urls = result.get("signed_output_urls", [])
+        if status == "success":
+            if not isinstance(urls, list) or not urls or not isinstance(urls[0], str):
+                raise TexelError("Texel completed the video job but returned no supported download URL. Check the dashboard or resume this job later.")
+            return {"completed": True, "url": urls[0], "progress": 100}
+        progress = result.get("progress", 0)
+        if not isinstance(progress, (int, float)) or not 0 <= progress <= 100:
+            progress = 0
+        return {"completed": False, "progress": progress}
+
+    def download_video(self, url: str, path) -> None:
+        # Signed media URLs are untrusted and must never receive our API key.
+        temporary = path.with_suffix(".part")
+        try:
+            with httpx.Client(timeout=httpx.Timeout(120, connect=20), follow_redirects=False) as client:
+                for _ in range(4):
+                    _public_https(url)
+                    with client.stream("GET", url) as response:
+                        if response.is_redirect:
+                            from urllib.parse import urljoin
+                            url = urljoin(url, response.headers.get("location", ""))
+                            continue
+                        if response.status_code != 200:
+                            raise TexelError("Could not download the generated video. Resume this saved job to refresh its URL.")
+                        size = 0
+                        with temporary.open("wb") as output:
+                            for chunk in response.iter_bytes():
+                                size += len(chunk)
+                                if size > 100 * 1024 * 1024:
+                                    raise TexelError("Generated video exceeded the 100 MB limit.")
+                                output.write(chunk)
+                        from trailer_render import validate_video
+                        validate_video(temporary)
+                        temporary.replace(path)
+                        return
+                raise TexelError("Too many redirects downloading the generated video.")
+        except httpx.HTTPError as exc:
+            raise TexelError("Video download was interrupted. Resume the saved job without generating again.") from exc
+        finally:
+            temporary.unlink(missing_ok=True)

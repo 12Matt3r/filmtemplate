@@ -1,4 +1,4 @@
-"""Honest storyboard trailer: title cards, approved stills, cuts, optional audio."""
+"""Normalize saved Texel clips or approved stills into a title-card trailer."""
 import json
 import shutil
 import subprocess
@@ -26,6 +26,16 @@ def validate_audio(path: Path):
     duration = float(result.get("format", {}).get("duration", 0))
     if duration <= 0 or duration > 600:
         raise ValueError("Use an audio file between 1 second and 10 minutes long.")
+
+
+def validate_video(path: Path):
+    result = json.loads(_run(["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_streams", "-show_format", "-of", "json", str(path)], timeout=15))
+    streams = [s for s in result.get("streams", []) if s.get("codec_type") == "video"]
+    duration = float(result.get("format", {}).get("duration", 0))
+    if not streams or not 0 < duration <= 120:
+        raise ValueError("Generated media is not a supported short video.")
+    if any(int(s.get("width", 0)) * int(s.get("height", 0)) > 16_000_000 for s in streams):
+        raise ValueError("Generated video exceeds the pixel limit.")
 
 
 def _font(size):
@@ -68,14 +78,18 @@ def assemble(body, folder: Path, render_id: str) -> Path:
     work = folder / render_id
     work.mkdir()
     frames = []
+    animated = body.get("animated", False)
     title = Image.new("RGB", (WIDTH, HEIGHT), "#101014")
     draw = ImageDraw.Draw(title)
     _text(draw, "SHOWRUNNER STUDIO", (70, 80), 24, "#f6b84a", 1100)
     _text(draw, body["show_title"], (70, 220), 54, "#ffffff", 1100)
-    _text(draw, "STORYBOARD TRAILER • TEXEL KEYFRAMES", (70, 620), 22, "#b9b9c2", 1100)
+    _text(draw, "TRAILER • TEXEL IMAGE + VIDEO" if animated else "STORYBOARD TRAILER • TEXEL KEYFRAMES", (70, 620), 22, "#b9b9c2", 1100)
     title.save(work / "title.png")
     frames.append((work / "title.png", 2))
     for index, shot in enumerate(body["shots"]):
+        if animated:
+            frames.append((folder / shot["video_asset"], shot["duration_seconds"]))
+            continue
         with Image.open(folder / shot["asset"]) as source:
             frame = ImageOps.fit(source.convert("RGB"), (WIDTH, HEIGHT), method=Image.Resampling.LANCZOS)
         draw = ImageDraw.Draw(frame)
@@ -86,14 +100,21 @@ def assemble(body, folder: Path, render_id: str) -> Path:
         frame.save(frame_path)
         frames.append((frame_path, shot["duration_seconds"]))
     end = Image.new("RGB", (WIDTH, HEIGHT), "#101014")
-    _text(ImageDraw.Draw(end), "Directed in Showrunner Studio\nKeyframes generated with Texel", (70, 260), 36, "#ffffff", 1100)
+    _text(ImageDraw.Draw(end), "Directed in Showrunner Studio\nImages and video generated with Texel" if animated else "Directed in Showrunner Studio\nKeyframes generated with Texel", (70, 260), 36, "#ffffff", 1100)
     end.save(work / "end.png")
     frames.append((work / "end.png", 2))
     segments = []
     for index, (frame_path, duration) in enumerate(frames):
         segment = work / f"segment-{index}.mp4"
-        _run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-loop", "1", "-framerate", str(FPS), "-i", str(frame_path), "-t", str(duration),
-              "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-threads", "2", str(segment)])
+        image = frame_path.suffix == ".png"
+        inputs = ["-loop", "1", "-framerate", str(FPS)] if image else ["-protocol_whitelist", "file,pipe"]
+        # Rescale mixed provider outputs, normalize timestamps/FPS, and hold the
+        # last frame if the provider returned a clip shorter than the planned cut.
+        filters = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS},setpts=PTS-STARTPTS"
+        if not image:
+            filters += f",tpad=stop_mode=clone:stop_duration={duration}"
+        _run(["ffmpeg", "-v", "error", "-nostdin", "-y", *inputs, "-i", str(frame_path), "-t", str(duration),
+              "-map", "0:v:0", "-vf", filters, "-an", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-threads", "2", str(segment)])
         segments.append(segment)
     manifest = work / "concat.txt"
     # Generated filenames only; no user strings enter FFmpeg filter expressions.

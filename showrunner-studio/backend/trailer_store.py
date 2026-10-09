@@ -61,6 +61,9 @@ class TrailerStore:
                     if shot["status"] == "generating":
                         shot["status"] = "interrupted"
                         shot["error"] = "Backend restarted during generation. Check Texel billing before manually retrying."
+                    if shot.get("video_status") == "generating":
+                        shot["video_status"] = "interrupted"
+                        shot["video_error"] = "Backend restarted. Resume the saved video job without generating again." if shot.get("video_job") else "Backend restarted before saving a video job ID. Check Texel billing before generating again."
                 if body["status"] == "rendering":
                     body["status"] = "error"
                     body["error"] = "Backend restarted during export. You can assemble again without regenerating images."
