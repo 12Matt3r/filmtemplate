@@ -81,7 +81,7 @@ def assemble(body, folder: Path, render_id: str) -> Path:
     animated = body.get("animated", False)
     title = Image.new("RGB", (WIDTH, HEIGHT), "#101014")
     draw = ImageDraw.Draw(title)
-    _text(draw, "SHOWRUNNER STUDIO", (70, 80), 24, "#f6b84a", 1100)
+    _text(draw, "TEXEL STUDIO", (70, 80), 24, "#f6b84a", 1100)
     _text(draw, body["show_title"], (70, 220), 54, "#ffffff", 1100)
     _text(draw, "TRAILER • TEXEL IMAGE + VIDEO" if animated else "STORYBOARD TRAILER • TEXEL KEYFRAMES", (70, 620), 22, "#b9b9c2", 1100)
     title.save(work / "title.png")
@@ -100,7 +100,7 @@ def assemble(body, folder: Path, render_id: str) -> Path:
         frame.save(frame_path)
         frames.append((frame_path, shot["duration_seconds"]))
     end = Image.new("RGB", (WIDTH, HEIGHT), "#101014")
-    _text(ImageDraw.Draw(end), "Directed in Showrunner Studio\nImages and video generated with Texel" if animated else "Directed in Showrunner Studio\nKeyframes generated with Texel", (70, 260), 36, "#ffffff", 1100)
+    _text(ImageDraw.Draw(end), "Directed in Texel Studio\nImages and video generated with Texel" if animated else "Directed in Texel Studio\nKeyframes generated with Texel", (70, 260), 36, "#ffffff", 1100)
     end.save(work / "end.png")
     frames.append((work / "end.png", 2))
     segments = []

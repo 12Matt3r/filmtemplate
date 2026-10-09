@@ -1,4 +1,4 @@
-"""Showrunner Studio backend — LLM script generation endpoint.
+"""Texel Studio backend — LLM script generation endpoint.
 
 Given a Show Bible, a selected Set, selected Characters, and a scene concept,
 asks Gemini to draft a new scene mapped directly into the app's data schema
@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from texel_routes import router as texel_router
 
-app = FastAPI(title="Showrunner Studio Backend")
+app = FastAPI(title="Texel Studio Backend")
 app.include_router(texel_router)
 
 app.add_middleware(

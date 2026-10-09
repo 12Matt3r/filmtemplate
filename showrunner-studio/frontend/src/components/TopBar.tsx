@@ -19,7 +19,7 @@ function downloadSnapshot(snapshot: ProjectSnapshot) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `showrunner-studio-${date}.json`;
+  a.download = `texel-studio-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -42,7 +42,7 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
     try {
       const parsed = JSON.parse(await file.text()) as ProjectSnapshot;
       if (!parsed || !Array.isArray(parsed.shows)) {
-        setImportError("That file doesn't look like a Showrunner Studio project export.");
+        setImportError("That file doesn't look like a Texel Studio project export.");
         return;
       }
       setPendingImport(parsed);
@@ -67,7 +67,7 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
       <div className="flex shrink-0 items-center gap-2">
         <Clapperboard size={18} className="text-amber-400" aria-hidden />
         <span className="hidden font-mono text-[12px] font-semibold tracking-[0.2em] text-neutral-100 sm:inline">
-          SHOWRUNNER<span className="text-amber-400">/</span>STUDIO
+          TEXEL<span className="text-amber-400"> STUDIO</span>
         </span>
       </div>
 

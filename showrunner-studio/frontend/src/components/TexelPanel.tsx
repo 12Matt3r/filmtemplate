@@ -5,6 +5,7 @@ import type { CharacterEntity, EpisodeEntity, SceneEntity, SetEntity, ShowMeta }
 import { db } from "../lib/db";
 import { compileTexelShots, jsonRequest, texelRequest } from "../lib/texelExport";
 import type { TexelCapabilities, TexelShot, TexelShotPlan, TexelTrailer } from "../lib/texelExport";
+import { TexelCloudPanel } from "./TexelCloudPanel";
 import { useConfirm } from "./ConfirmDialog";
 import { Button, Chip, Field, Spinner, TextArea } from "./ui";
 
@@ -28,7 +29,7 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
   const mounted = useRef(true);
   const requestId = useRef(crypto.randomUUID());
   const active = trailers.find((trailer) => trailer.id === activeId) ?? null;
-  const running = active?.status === "rendering" || active?.shots.some((shot) => shot.status === "generating" || shot.video_status === "generating");
+  const running = active?.status === "rendering" || active?.cloud_render?.status === "running" || active?.shots.some((shot) => shot.status === "generating" || shot.video_status === "generating");
 
   const scenes = useLiveQuery(async () => {
     const episodes = await db.episodes.where("showId").equals(show.id).sortBy("order");
@@ -131,6 +132,7 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
       {capabilities && <div className="rounded-md border border-neutral-800 p-2.5 text-[11px] leading-relaxed text-neutral-400">
         <p>Image model: <span className="text-neutral-200">{capabilities.image_model}</span></p>
         <p>Video model: <span className="text-neutral-200">{capabilities.video_model}</span></p>
+        <p className="mt-1 text-amber-300">Image and animation use Texel’s SDK routes. Access is unverified; those routes are absent from the current production docs. Confirm account access before generating.</p>
         {!capabilities.configured && <p className="mt-1 text-amber-300">Texel generation is unavailable. Configure TEXEL_API_KEY on the backend. You can prepare and save shot plans now.</p>}
         {!capabilities.ffmpeg_available && <p className="mt-1 text-amber-300">Install FFmpeg on the backend to enable MP4 export.</p>}
       </div>}
@@ -173,12 +175,16 @@ export function TexelPanel({ show, scene, sets, characters }: Props) {
       {active && <div className="space-y-3">
         <div className="flex items-center justify-between"><h3 className="font-medium text-neutral-100">Keyframe review</h3><Chip tone="amber">{active.status}</Chip></div>
         <p className="text-[11px] text-neutral-500">Each Generate sends one Texel image request. Completed images stay saved. Review the output before approval.</p>
-        {active.shots.map((shot) => <ShotCard key={`${active.id}-${shot.id}`} shot={shot} busy={busy || active.status === "rendering"}
+        {active.shots.map((shot) => <ShotCard key={`${active.id}-${shot.id}`} shot={shot} busy={busy || active.status === "rendering" || active.cloud_render?.status === "running"}
           configured={!!capabilities?.configured} videoAvailable={!!capabilities?.video_generation}
           onAnimate={(prompt) => void animate(shot, prompt)}
           onResume={() => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/shots/${shot.id}/resume`, { method: "POST" }))}
           onGenerate={(prompt) => void generate(shot, prompt)}
           onApprove={() => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/shots/${shot.id}/approval`, jsonRequest({ approved: shot.status !== "approved" })))} />)}
+
+        <TexelCloudPanel key={active.id} trailer={active} busy={busy || !!running} configured={!!capabilities?.configured}
+          available={!!capabilities?.cloud_render_available} onRender={(payload) => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/cloud-render`, jsonRequest(payload)))}
+          onResume={(readUrl) => void run(() => texelRequest<TexelTrailer>(`/trailers/${active.id}/cloud-render/resume`, jsonRequest({ output_read_url: readUrl })))} />
 
         {capabilities?.audio_available && <div className="space-y-2 rounded-md border border-neutral-800 p-3">
           <label className="block space-y-2"><span>Optional score or voiceover · under 20 MB</span>

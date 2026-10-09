@@ -28,6 +28,7 @@ export interface TexelTrailer {
   shots: TexelShot[];
   video_url: string | null;
   animated?: boolean;
+  cloud_render?: { client_id: string; job_id: string | null; status: "running" | "interrupted" | "error" | "complete"; progress: number; error: string | null } | null;
   audio_name: string | null;
   error: string | null;
 }
@@ -37,6 +38,8 @@ export interface TexelCapabilities {
   image_model: string;
   video_model: string;
   video_generation: boolean;
+  generation_source: string;
+  cloud_render_available: boolean;
   ffmpeg_available: boolean;
   audio_available: boolean;
 }

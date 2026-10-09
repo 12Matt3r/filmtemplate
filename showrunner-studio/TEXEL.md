@@ -1,8 +1,10 @@
-# Outline to Trailer
+# Texel Studio — Outline to Trailer
 
-The Texel tab compiles one to three scenes into editable keyframe prompts, expands the registered character and set descriptions, saves a shot plan, generates images through Texel, animates approved images through FramePack, and assembles saved clips into a downloadable 720p MP4. An optional uploaded score or voiceover loops to the cut length. Exports include opening and closing title cards. A separate still-image storyboard export remains available.
+The studio now includes two media paths. The SDK generation path compiles one to three scenes into editable keyframe prompts, expands the registered character and set descriptions, saves a shot plan, generates images through Texel, animates approved images through FramePack, and assembles saved clips into a downloadable 720p MP4. An optional uploaded score or voiceover loops to the cut length. Exports include opening and closing title cards. A separate still-image storyboard export remains available.
 
-This version generates **images and animated clips**. FramePack is conditioned on each approved keyframe. It does not generate voice or music, train character identities, or perform visual QC. The existing Script Lab remains available for script critique and revision; it is not an automated rendering gate.
+The current production API path joins remotely hosted scene clips into a **720p cut** and optionally adds audio or applies Texel Studio Voice enhancement. It accepts clips from any source, so it does not depend on access to the SDK generation routes. It requires readable input URLs, a signed writable output URL, and a read URL for that same output. The cloud cut contains scene clips only; title cards remain part of local assembly.
+
+The SDK path implements **image and animated clip generation**, but access is unverified and these endpoints are absent from the current production documentation. FramePack is conditioned on each approved keyframe. It does not generate voice or music, train character identities, or perform visual QC. The existing Script Lab remains available for script critique and revision; it is not an automated rendering gate.
 
 ## Run locally
 
@@ -18,16 +20,28 @@ Open http://localhost:3001. Import or create a show with scenes, open the Texel 
 
 The `.env` file is loaded by the launcher into the backend only. Texel's key never reaches the browser. This is a private, single-user development studio: keep the backend private. Public hosting must add access control and per-user storage/usage limits before exposing paid generation endpoints. Deploy media jobs in a long-running process with a persistent `TEXEL_DATA_DIR`; the current implementation uses a two-worker thread pool and is not a serverless job queue.
 
-## API contract used
+## Production API contract (current documentation)
 
-Source of truth: [Texel's official Python SDK](https://github.com/TexelSoftware/texel-sdks/blob/42676c8d42a44cc79463ce4c8f789fd3f8054150/python/texel_api.py), pinned for reference to commit `42676c8`. Its production base URL is `https://api.prod.texel.ai/v1`. The generic Scalar/OpenAPI docs at https://texel.ai/api_docs/ describe a different API surface, including DreamBooth training and inference. A DreamBooth result endpoint is not a video-job result endpoint; this workflow follows the SDK's SD server routes instead.
+Authoritative reference: https://api.prod.texel.ai/docs#description/introduction. Its Scalar page loads https://api.prod.texel.ai/docs/openapi.json (checked October 9, 2026). The current public schema documents video encoding/editing, Maxine eye-contact correction, Studio Voice enhancement, lip sync, and usage reporting. It does **not** list text-to-image, image-to-video, music generation, or text-to-speech endpoints. Absence from this schema is not proof the SDK endpoints have been removed, but it is not confirmation of account access either.
+
+In a saved trailer, open **Render clips with Texel’s production API**. Provide one readable HTTPS video URL per selected scene, in script order. Provide a signed upload URL and read URL for the same MP4 object. These need to remain valid through queueing, processing, and download. Optional audio must also be hosted; the locally uploaded audio is not automatically published. Enable Studio Voice only for recorded speech. Short cloud audio is padded with silence, not looped.
+
+The backend sends one `POST /v1/video_encoder/encode` with labeled `inputs`, a writable `outputs[0].url`, H.264 NVENC, 24 fps, 4 Mbps, and an FFmpeg filter graph. Each clip is scaled/padded to 1280×720, normalized to square pixels and 24 fps, held if short, trimmed to its planned duration, reset to time zero, and concatenated. Optional audio uses `nvafx` with `effect=studio_voice_high_quality`, then padding/trimming and a final fade. The payload follows the docs’ resize, concat, and voice examples. The standard graph is also executed locally by a test with real mixed-resolution clips and short audio; cloud GPU execution still requires a live account test.
+
+The encoder response uses `job_id` (different from the SDK generator's `id`). Poll `GET /v1/video_encoder/status/{job_id}` until `job_status=success`. The result is at the supplied output location, not an assumed generated download URL. `download_error`, `encode_error`, `upload_error`, and `unknown_error` are terminal failures. A `client_job_id` is persisted before submission; interrupted requests can resume with `GET /v1/video_encoder/status_client_id/{client_job_id}` without another POST, even when the submit response was lost. Finished MP4s are downloaded and validated locally. Signed storage URLs remain in backend storage and are omitted from API snapshots. If the output read link expires, enter a fresh read URL for the same object before resuming; this refreshes download access without another encoding submission.
+
+The docs also provide `/v1/lipsync/run_lipsync` and `/v1/billing/usage`. They are documented capabilities, not currently exposed app features. Usage reporting is not a jam-credit balance check. The branch has not spent any Texel credits.
+
+## SDK generation contract (unverified account access)
+
+Generation implementation reference: [Texel's official Python SDK](https://github.com/TexelSoftware/texel-sdks/blob/42676c8d42a44cc79463ce4c8f789fd3f8054150/python/texel_api.py), pinned for reference to commit `42676c8`. Its production base URL is `https://api.prod.texel.ai/v1`. The generic Scalar/OpenAPI docs at https://texel.ai/api_docs/ describe a different API surface, including DreamBooth training and inference. A DreamBooth result endpoint is not a video-job result endpoint; this workflow follows the SDK's SD server routes instead.
 
 - Images: `POST /sd_server/txt2img` with Bearer authentication, a model object (`name=juggernautXL_v8Rundiffusion.safetensors`, `type=SDXL`), the SDK's nested request properties, one image, 20 steps, cfg scale 7, and 768×432 dimensions. `TEXEL_IMAGE_MODEL` overrides the model name. The SDK returns `images` as base64 image strings; the adapter validates and saves PNGs.
 - Animation: `POST /sd_server/img2vid`, model `FramePackI2V_HY_fp8_e4m3fn` / `FRAMEPACK_VIDEO`, approved PNG as base64 `init_images`, editable motion prompt, planned duration as `length`, 30 steps, cfg scale 3, 768×432, H.264 MP4. The SDK demonstrates the `length` field at one second; the application requests its planned 5–10-second cut. Account support for these lengths must be confirmed by a live smoke test.
 - Job results: save the returned `id`, then `GET /sd_server/status/{id}/FRAMEPACK_VIDEO`. `job_status=success` plus `signed_output_urls` completes the job. Processing jobs expose `progress`; failure states are reported without exposing raw provider errors.
 - Downloads: signed URLs are fetched without credentials, limited to 100 MB, checked with ffprobe, and saved locally. Assembly normalizes video to 720p/24 fps, trims long outputs, holds the last frame for shorter outputs, removes clip audio, and adds an optional uploaded score/voiceover.
 
-The adapter implements these contracts with HTTPX rather than vendoring the sample SDK. Requests have timeouts and no automatic generation retries; downloads do not inherit the SDK's authenticated session. A live account smoke test is still needed to confirm enabled models, credits, and output shape. Automated tests never call Texel or consume credits. The SDK does not provide an audio-generation contract, so score/voiceover currently comes from an upload.
+The adapter implements these contracts with HTTPX rather than vendoring the sample SDK. Requests have timeouts and no automatic generation retries; downloads do not inherit the SDK's authenticated session. A live account smoke test is still needed to confirm enabled models, credits, and output shape. Automated tests never call Texel or consume credits. Audio generation is not established by the SDK or current public docs; score/voiceover currently comes from an upload or hosted media URL.
 
 ## Persistence and retries
 
@@ -48,4 +62,4 @@ uv sync
 uv run python -m unittest discover -s tests -v
 ```
 
-Tests cover SDK image/video payloads, authenticated job polling, safe downloads, resume without resubmission, clip-based exports, response decoding, approval and retry gates, idempotent plans, restart recovery, protected media paths, optional audio validation, real FFmpeg assembly, MP4 duration/resolution, downloading, and reassembly without another provider call.
+Tests cover production encoder payloads and statuses, client-ID recovery after an ambiguous submission, signed URL redaction, execution of the standard encoder filter graph, SDK image/video payloads, authenticated job polling, safe downloads, resume without resubmission, clip-based exports, response decoding, approval and retry gates, idempotent plans, restart recovery, protected media paths, optional audio validation, real FFmpeg assembly, MP4 duration/resolution, downloading, and reassembly without another provider call.

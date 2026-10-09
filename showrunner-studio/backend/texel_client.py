@@ -42,7 +42,7 @@ def _public_https(url: str) -> None:
 
 
 def _image_value(value):
-    """The public spec leaves response bodies untyped. Accept common image envelopes,
+    """The SDK returns base64 images. Also accept common image envelopes,
     fail visibly for other shapes, and never reinterpret a job ID as an image.
     """
     if isinstance(value, str):
@@ -65,7 +65,7 @@ def decode_image(body: bytes, content_type: str, client: httpx.Client) -> bytes:
         except (ValueError, TypeError) as exc:
             raise TexelError("Texel returned invalid image JSON.") from exc
         if not value:
-            raise TexelError("Texel returned no supported image output. Check the account's response format; the public spec leaves it unspecified.")
+            raise TexelError("Texel returned no supported image output. Check SDK endpoint access and the account's response format.")
         if value.startswith("https://"):
             # Validate every redirect and never forward our API Authorization header.
             for _ in range(4):

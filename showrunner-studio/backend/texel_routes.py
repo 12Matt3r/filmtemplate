@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
 from texel_client import TexelClient, TexelError, TexelJobFailed
+from texel_encoder import TexelEncoderClient, encoder_request
 from trailer_render import assemble, validate_audio
 from trailer_store import TrailerStore
 
@@ -53,6 +54,23 @@ class RenderTrailer(BaseModel):
     animated: bool = False
 
 
+class CloudClip(BaseModel):
+    shot_id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
+    url: str = Field(min_length=1, max_length=8192)
+
+
+class CloudRender(BaseModel):
+    clips: list[CloudClip] = Field(min_length=1, max_length=3)
+    output_upload_url: str = Field(min_length=1, max_length=8192)
+    output_read_url: str = Field(min_length=1, max_length=8192)
+    audio_url: str | None = Field(default=None, max_length=8192)
+    enhance_voice: bool = False
+
+
+class CloudResume(BaseModel):
+    output_read_url: str | None = Field(default=None, min_length=1, max_length=8192)
+
+
 class ShotApproval(BaseModel):
     approved: bool
 
@@ -80,7 +98,7 @@ class TrailerService:
 
     @staticmethod
     def editable(body):
-        if body["status"] == "rendering":
+        if body["status"] == "rendering" or body.get("cloud_render", {}).get("status") == "running":
             raise ValueError("Wait for the current export to finish.")
 
     @staticmethod
@@ -218,6 +236,65 @@ class TrailerService:
         except Exception:
             self.store.mutate(body["id"], lambda b: b.update(status="error", error="MP4 export failed. Check FFmpeg and the attached audio, then assemble again. Your approved keyframes are saved."))
 
+    def cloud_render(self, trailer_id, plan=None, resume=False):
+        if not os.environ.get("TEXEL_API_KEY"):
+            raise ValueError("Set TEXEL_API_KEY on the backend before rendering with Texel.")
+        if not shutil.which("ffprobe"):
+            raise ValueError("Install ffprobe to validate the finished cut.")
+        operation = uuid.uuid4().hex
+        # Build and validate before storing or submitting any paid job.
+        payload = None if resume else encoder_request(self.store.get(trailer_id)["shots"], plan, operation)
+        def start(body):
+            self.editable(body)
+            if any(s["status"] == "generating" or s.get("video_status") == "generating" for s in body["shots"]):
+                raise ValueError("Wait for current shot generation before cloud rendering.")
+            if resume:
+                if body.get("cloud_render", {}).get("status") != "interrupted":
+                    raise ValueError("There is no interrupted cloud render to resume.")
+                if plan and plan.get("output_read_url"):
+                    from texel_client import _public_https
+                    try:
+                        _public_https(plan["output_read_url"])
+                    except TexelError as exc:
+                        raise ValueError("Use a public HTTPS read URL for the saved output.") from exc
+                    body["cloud_render"]["plan"]["output_read_url"] = plan["output_read_url"]
+                body["cloud_render"].update(status="running", error=None)
+            else:
+                body["cloud_render"] = {"client_id": operation, "job_id": None, "status": "running", "progress": 0, "error": None,
+                                        "plan": plan, "payload": payload}
+            self.invalidate(body)
+        body = self.store.mutate(trailer_id, start)
+        self.executor.submit(self._cloud_render, trailer_id, resume)
+        return body
+
+    def _cloud_render(self, trailer_id, resume):
+        try:
+            client = TexelEncoderClient()
+            saved = self.store.get(trailer_id)["cloud_render"]
+            job_id = saved["job_id"]
+            if not resume:
+                job_id = client.submit(saved["payload"])
+                self.store.mutate(trailer_id, lambda b: b["cloud_render"].update(job_id=job_id))
+            deadline = time.monotonic() + 600
+            while not self.stopping.is_set() and time.monotonic() < deadline:
+                state = client.status(job_id, saved["client_id"])
+                self.store.mutate(trailer_id, lambda b: b["cloud_render"].update(progress=state["progress"]))
+                if state["completed"]:
+                    folder = self.store.root / trailer_id
+                    folder.mkdir(exist_ok=True)
+                    filename = f"cloud-{uuid.uuid4().hex}.mp4"
+                    client.download_video(saved["plan"]["output_read_url"], folder / filename)
+                    def finish(body):
+                        body.update(status="complete", animated=True, video_asset=filename, error=None)
+                        body["cloud_render"].update(status="complete", progress=100, error=None)
+                    self.store.mutate(trailer_id, finish)
+                    return
+                self.stopping.wait(5)
+            raise TexelError("Polling paused. Resume the saved cloud job without submitting again.")
+        except Exception as exc:
+            message = str(exc) if isinstance(exc, TexelError) else "Cloud rendering could not finish. Resume the saved job before submitting again."
+            self.store.mutate(trailer_id, lambda b: b["cloud_render"].update(status="error" if isinstance(exc, TexelJobFailed) else "interrupted", error=message))
+
     def attach_audio(self, trailer_id, data, name):
         self.editable(self.store.get(trailer_id))
         folder = self.store.root / trailer_id
@@ -278,7 +355,11 @@ def _call(fn, *args):
 def public_body(body):
     def media(asset):
         return f"/api/texel/trailers/{body['id']}/media/{asset}" if asset else None
-    return {**body, "video_url": media(body["video_asset"]),
+    # Signed upload/download URLs are stored privately, never echoed in snapshots.
+    cloud = body.get("cloud_render")
+    public = {k: v for k, v in body.items() if k != "cloud_render"}
+    return {**public, "cloud_render": {k: cloud[k] for k in ("client_id", "job_id", "status", "progress", "error")} if cloud else None,
+            "video_url": media(body["video_asset"]),
             "shots": [{**s, "image_url": media(s["asset"]), "clip_url": media(s.get("video_asset"))} for s in body["shots"]]}
 
 
@@ -286,7 +367,8 @@ def public_body(body):
 def capabilities():
     return {"configured": bool(os.environ.get("TEXEL_API_KEY")), "image_model": os.environ.get("TEXEL_IMAGE_MODEL", "juggernautXL_v8Rundiffusion.safetensors"),
             "ffmpeg_available": bool(shutil.which("ffmpeg")), "audio_available": bool(shutil.which("ffprobe")),
-            "video_model": "FramePack", "mode": "trailer", "max_shots": 3, "video_generation": bool(shutil.which("ffprobe")), "audio_generation": False}
+            "video_model": "FramePack (SDK; access unverified)", "generation_source": "sdk_unverified",
+            "cloud_render_available": bool(shutil.which("ffprobe")), "voice_enhancement": True, "mode": "trailer", "max_shots": 3, "video_generation": bool(shutil.which("ffprobe")), "audio_generation": False}
 
 
 @router.post("/trailers", status_code=201)
@@ -329,6 +411,16 @@ def render(trailer_id: str, req: RenderTrailer = RenderTrailer()):
     return public_body(_call(service().render, trailer_id, req.animated))
 
 
+@router.post("/trailers/{trailer_id}/cloud-render", status_code=202)
+def cloud_render(trailer_id: str, req: CloudRender):
+    return public_body(_call(service().cloud_render, trailer_id, req.model_dump()))
+
+
+@router.post("/trailers/{trailer_id}/cloud-render/resume", status_code=202)
+def cloud_resume(trailer_id: str, req: CloudResume = CloudResume()):
+    return public_body(_call(service().cloud_render, trailer_id, req.model_dump(exclude_none=True), True))
+
+
 @router.post("/trailers/{trailer_id}/audio")
 async def audio(trailer_id: str, file: UploadFile = File(...)):
     try:
@@ -356,4 +448,4 @@ def media(trailer_id: str, filename: str, download: bool = False):
         raise HTTPException(404, "Media not found.")
     return FileResponse(service().store.root / trailer_id / filename,
                         media_type="video/mp4" if filename.endswith(".mp4") else "image/png",
-                        filename="storyboard-trailer.mp4" if download and filename.endswith(".mp4") else None)
+                        filename="trailer.mp4" if body.get("animated") and download and filename.endswith(".mp4") else "storyboard-trailer.mp4" if download and filename.endswith(".mp4") else None)
