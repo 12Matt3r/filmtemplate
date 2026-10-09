@@ -1,4 +1,18 @@
-# Script Studio
+# Showrunner Studio
+
+The primary app lives in `showrunner-studio/`: a React/TypeScript production editor with a FastAPI backend, scene drafting, script critique, Showrunner/Seedance prompt exports, and a Texel storyboard-trailer workflow.
+
+## Start the current app
+
+Install Node 22.12+ (or 24+), Python 3.12+, uv, and FFmpeg. Copy `showrunner-studio/.env.example` to `showrunner-studio/.env`, set a server-side `TEXEL_API_KEY` to enable image generation, and run `./start.sh`. Open http://localhost:3001. Without a Texel key you can still write, import, export, and prepare trailer plans.
+
+See [Outline to Trailer setup and implementation notes](showrunner-studio/TEXEL.md) for the workflow, persistence, API contract, tests, and current limits. The initial MP4 output is a clearly labeled **storyboard trailer made from still keyframes**, with optional uploaded audio.
+
+The older static Script Studio prototype remains in `public/` and `source/`, reachable through the backend at `/legacy/public/`. The historical documentation below describes that prototype, not the current primary app.
+
+---
+
+# Legacy Script Studio
 
 Script Studio is a local-first, browser-based application designed for writers to create, manage, and outline their movie and television series projects. It provides a clean, distraction-free interface for developing core concepts, characters, and narrative structures, with all data saved directly in your browser's `localStorage`.
 

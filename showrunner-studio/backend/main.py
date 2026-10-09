@@ -17,8 +17,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from texel_routes import router as texel_router
 
 app = FastAPI(title="Showrunner Studio Backend")
+app.include_router(texel_router)
 
 app.add_middleware(
     CORSMiddleware,
