@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start the current Showrunner Studio application.
+# Start Texel Studio.
 set -e
 
 cd "$(dirname "$0")"

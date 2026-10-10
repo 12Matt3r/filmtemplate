@@ -4,6 +4,18 @@ The primary app lives in `showrunner-studio/`: a React/TypeScript production edi
 
 ## Start the current app
 
+### Test in your browser on GitHub
+
+[Launch Texel Studio in GitHub Codespaces](https://codespaces.new/hungryshmorez/filmtemplate/tree/codex/texel-outline-to-trailer)
+
+Choose **Create codespace** with the branch `codex/texel-outline-to-trailer`. Setup installs Node 24, Python 3.12, uv, FFmpeg and the locked app dependencies. Both servers start automatically. Once setup finishes, open **Ports → 3001 → Open in Browser** if the app does not open itself. Keep the port private: this development build has no app-level login. Codespaces usage depends on your GitHub account allowance.
+
+You can immediately create a script, edit its bible, add characters, sets and scenes, export/import JSON, and prepare a Texel shot plan without API keys. For Texel media requests, add `TEXEL_API_KEY` as a [Codespaces secret](https://github.com/settings/codespaces) scoped to this repository before creating the Codespace. AI drafting and critique use the separate `PROJEC_GOOGLE_API_KEY` secret. Existing Codespaces must be stopped and restarted after secret changes. The production cloud renderer also requires hosted input clips and signed output URLs; live Texel account access has not yet been verified.
+
+Startup logs are in `.devcontainer/.runtime/studio.log`. Export your project JSON before deleting a Codespace or changing browsers: scripts are saved in your browser, while generated media and job progress are stored in the Codespace. This is a private test environment; the app runs while that Codespace is active. GitHub Pages cannot run the Python backend or media processing.
+
+### Run on your computer
+
 Install Node 22.12+ (or 24+), Python 3.12+, uv, and FFmpeg. Copy `showrunner-studio/.env.example` to `showrunner-studio/.env`, set a server-side `TEXEL_API_KEY` for Texel media requests, and run `./start.sh`. Open http://localhost:3001. Without a Texel key you can still write, import, export, and prepare trailer plans.
 
 See [Outline to Trailer setup and implementation notes](showrunner-studio/TEXEL.md) for the workflow, persistence, API contract, tests, and current limits. The documented production integration assembles hosted clips into a 720p cut and can enhance a supplied voiceover. SDK image/FramePack generation is also implemented but account access remains unverified; those routes are not in the current production docs. Local title-card and still-image exports remain available.
