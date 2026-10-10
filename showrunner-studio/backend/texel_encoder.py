@@ -90,7 +90,9 @@ def encoder_request(shots, plan, client_id):
     return {'client_job_id': client_id, 'inputs': inputs,
             'outputs': [{'url': plan['output_upload_url'], 'streams': ['video', 'audio'] if audio else ['video']}],
             'video_encoder_codec': 'h264_nvenc', 'video_properties': {'fps': fps, 'bitrate': '4M'},
-            'audio_encoder_codec': 'aac' if audio else 'copy', 'audio_properties': {'sample_rate': 48000, 'channels': 2, 'bitrate': '192k'},
+            # Texel currently emits -aq even when quality is omitted. A concrete
+            # AAC quality avoids an empty option swallowing the following -ar.
+            'audio_encoder_codec': 'aac' if audio else 'copy', 'audio_properties': {'sample_rate': 48000, 'channels': 2, 'bitrate': '192k', 'quality': '2'},
             'file_format': 'mp4', 'filters': filters}
 
 
