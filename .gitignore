@@ -2,6 +2,7 @@
 node_modules/
 
 # Python
+.texel-data/
 .venv/
 __pycache__/
 *.pyc
@@ -22,3 +23,4 @@ yarn-error.log*
 
 # Temporary files
 jules-scratch/
+.devcontainer/.runtime/

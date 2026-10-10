@@ -1,4 +1,30 @@
-# Script Studio
+# Texel Studio
+
+The primary app lives in `showrunner-studio/`: a React/TypeScript production editor with a FastAPI backend, scene drafting, script critique, Showrunner/Seedance prompt exports, and a Texel trailer workflow with cloud clip assembly and optional voice enhancement.
+
+## Start the current app
+
+### Test in your browser on GitHub
+
+[Launch Texel Studio in GitHub Codespaces](https://codespaces.new/hungryshmorez/filmtemplate/tree/codex/texel-outline-to-trailer)
+
+Choose **Create codespace** with the branch `codex/texel-outline-to-trailer`. Setup installs Node 24, Python 3.12, uv, FFmpeg and the locked app dependencies. Both servers start automatically. Once setup finishes, open **Ports → 3001 → Open in Browser** if the app does not open itself. Keep the port private: this development build has no app-level login. Codespaces usage depends on your GitHub account allowance.
+
+You can immediately create a script, edit its bible, add characters, sets and scenes, export/import JSON, and prepare a Texel shot plan without API keys. For Texel generation, add `TEXEL_API_KEY` as a [Codespaces secret](https://github.com/settings/codespaces) scoped to this repository before creating the Codespace. Add the separate temporary editing credential as `TEXEL_EDITING_API_KEY` for production encoding and Studio Voice. Never paste either key into the browser app or commit it. AI drafting and critique use the separate `PROJEC_GOOGLE_API_KEY` secret. Existing Codespaces must be stopped and restarted after secret changes. The production cloud renderer also requires hosted input clips and signed output URLs; image generation and editing-key authentication were verified live on October 10, 2026. Animation returned a provider failure and is not verified.
+
+Startup logs are in `.devcontainer/.runtime/studio.log`. Export your project JSON before deleting a Codespace or changing browsers: scripts are saved in your browser, while generated media and job progress are stored in the Codespace. This is a private test environment; the app runs while that Codespace is active. GitHub Pages cannot run the Python backend or media processing.
+
+### Run on your computer
+
+Install Node 22.12+ (or 24+), Python 3.12+, uv, and FFmpeg. Copy `showrunner-studio/.env.example` to `showrunner-studio/.env`, set server-side `TEXEL_API_KEY` for generation and `TEXEL_EDITING_API_KEY` for editing, and run `./start.sh`. Open http://localhost:3001. Without a Texel key you can still write, import, export, and prepare trailer plans.
+
+See [Outline to Trailer setup and implementation notes](showrunner-studio/TEXEL.md) for the workflow, persistence, API contract, tests, and current limits. The documented production integration trims and reorders hosted clips into a 720p/30 fps cut, retains and normalizes their audio, or replaces it with a supplied soundtrack or enhanced voiceover. SDK image generation passed a live test; FramePack animation remains unverified after a provider failure. Production encoding still needs an end-to-end cloud test with signed output storage. Local title-card and still-image exports remain available.
+
+The older static Script Studio prototype remains in `public/` and `source/`, reachable through the backend at `/legacy/public/`. The historical documentation below describes that prototype, not the current primary app.
+
+---
+
+# Legacy Script Studio
 
 Script Studio is a local-first, browser-based application designed for writers to create, manage, and outline their movie and television series projects. It provides a clean, distraction-free interface for developing core concepts, characters, and narrative structures, with all data saved directly in your browser's `localStorage`.
 

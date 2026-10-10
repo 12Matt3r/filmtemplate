@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start Showrunner Studio: FastAPI backend + Vite/React frontend.
+# Start Texel Studio: FastAPI backend + Vite/React frontend.
 set -e
 
 cd "$(dirname "$0")"
@@ -16,7 +16,9 @@ fi
 (
   cd backend
   uv sync --quiet
-  uv run uvicorn main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload
+  UV_ENV_ARGS=()
+  if [ -f ../.env ]; then UV_ENV_ARGS=(--env-file ../.env); fi
+  uv run "${UV_ENV_ARGS[@]}" uvicorn main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload
 ) &
 BACKEND_PID=$!
 
