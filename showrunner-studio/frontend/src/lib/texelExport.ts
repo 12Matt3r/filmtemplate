@@ -35,6 +35,7 @@ export interface TexelTrailer {
 
 export interface TexelCapabilities {
   configured: boolean;
+  cloud_configured: boolean;
   image_model: string;
   video_model: string;
   video_generation: boolean;

@@ -57,6 +57,8 @@ class RenderTrailer(BaseModel):
 class CloudClip(BaseModel):
     shot_id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     url: str = Field(min_length=1, max_length=8192)
+    start_seconds: float = Field(default=0, ge=0, le=7200, allow_inf_nan=False)
+    duration_seconds: float | None = Field(default=None, gt=0, le=300, allow_inf_nan=False)
 
 
 class CloudRender(BaseModel):
@@ -65,6 +67,16 @@ class CloudRender(BaseModel):
     output_read_url: str = Field(min_length=1, max_length=8192)
     audio_url: str | None = Field(default=None, max_length=8192)
     enhance_voice: bool = False
+    preserve_audio: bool = False
+    normalize_audio: bool = False
+    audio_start_seconds: float = Field(default=0, ge=0, le=7200, allow_inf_nan=False)
+    fps: int = Field(default=24)
+
+    @model_validator(mode="after")
+    def valid_fps(self):
+        if self.fps not in (24, 30):
+            raise ValueError("Choose 24 or 30 fps.")
+        return self
 
 
 class CloudResume(BaseModel):
@@ -237,8 +249,8 @@ class TrailerService:
             self.store.mutate(body["id"], lambda b: b.update(status="error", error="MP4 export failed. Check FFmpeg and the attached audio, then assemble again. Your approved keyframes are saved."))
 
     def cloud_render(self, trailer_id, plan=None, resume=False):
-        if not os.environ.get("TEXEL_API_KEY"):
-            raise ValueError("Set TEXEL_API_KEY on the backend before rendering with Texel.")
+        if not (os.environ.get("TEXEL_EDITING_API_KEY") or os.environ.get("TEXEL_API_KEY")):
+            raise ValueError("Set TEXEL_EDITING_API_KEY on the backend before rendering with Texel.")
         if not shutil.which("ffprobe"):
             raise ValueError("Install ffprobe to validate the finished cut.")
         operation = uuid.uuid4().hex
@@ -366,6 +378,7 @@ def public_body(body):
 @router.get("/capabilities")
 def capabilities():
     return {"configured": bool(os.environ.get("TEXEL_API_KEY")), "image_model": os.environ.get("TEXEL_IMAGE_MODEL", "juggernautXL_v8Rundiffusion.safetensors"),
+            "cloud_configured": bool(os.environ.get("TEXEL_EDITING_API_KEY") or os.environ.get("TEXEL_API_KEY")),
             "ffmpeg_available": bool(shutil.which("ffmpeg")), "audio_available": bool(shutil.which("ffprobe")),
             "video_model": "FramePack (SDK; access unverified)", "generation_source": "sdk_unverified",
             "cloud_render_available": bool(shutil.which("ffprobe")), "voice_enhancement": True, "mode": "trailer", "max_shots": 3, "video_generation": bool(shutil.which("ffprobe")), "audio_generation": False}

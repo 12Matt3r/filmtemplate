@@ -31,6 +31,57 @@ def shots():
 
 
 class EncoderTests(unittest.TestCase):
+    def test_editing_key_is_separate_and_never_exposed_by_capabilities(self):
+        from texel_client import TexelClient
+        with patch.dict(os.environ, {'TEXEL_API_KEY': 'generation-private', 'TEXEL_EDITING_API_KEY': 'editing-private'}, clear=True):
+            self.assertEqual(TexelClient().key, 'generation-private')
+            self.assertEqual(TexelEncoderClient().key, 'editing-private')
+            self.assertNotIn('private', json.dumps(texel_routes.capabilities()))
+        with patch.dict(os.environ, {'TEXEL_EDITING_API_KEY': 'editing-private'}, clear=True):
+            self.assertTrue(texel_routes.capabilities()['cloud_configured'])
+            self.assertFalse(texel_routes.capabilities()['configured'])
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'FFmpeg required')
+    def test_reordered_trimmed_clips_preserve_and_normalize_audio(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            files = [root / 'red.mp4', root / 'blue.mp4']
+            for path, color, gain in [(files[0], 'red', .04), (files[1], 'blue', .8)]:
+                subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color=c={color}:s=320x180:r=30:d=3',
+                                '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-af', f'volume={gain}',
+                                '-c:v', 'libx264', '-threads', '1', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ar', '48000', '-ac', '2', str(path)], check=True)
+            p = plan()
+            p['clips'] = [{'shot_id': 'shot-2', 'url': 'https://media.example/blue.mp4', 'start_seconds': 1, 'duration_seconds': 1.5},
+                          {'shot_id': 'shot-1', 'url': 'https://media.example/red.mp4', 'start_seconds': .5, 'duration_seconds': 1}]
+            p.update(preserve_audio=True, normalize_audio=True, fps=30)
+            with patch('texel_encoder._public_https'):
+                payload = encoder_request(shots() + [{'id': 'shot-2', 'duration_seconds': 5}], p, 'client')
+            self.assertEqual(payload['inputs'][0]['url'], p['clips'][0]['url'])
+            graph = []
+            labels = {'clip0.video': '0:v:0', 'clip0.audio': '0:a:0', 'clip1.video': '1:v:0', 'clip1.audio': '1:a:0'}
+            for item in payload['filters']:
+                options = [str(a) for a in item.get('args', [])] + [f'{k}={v}' for k, v in item.get('kwargs', {}).items()]
+                graph.append(''.join('[' + labels.get(x, x) + ']' for x in item['inputs']) + item['name'] +
+                             ('=' + ':'.join(options) if options else '') + '[' + item['label'] + ']')
+            output = root / 'cut.mp4'
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(files[1]), '-i', str(files[0]), '-filter_complex_threads', '1',
+                            '-filter_complex', ';'.join(graph), '-map', '[cut]', '-map', '[audio_out]', '-c:v', 'libx264',
+                            '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(output)], check=True, capture_output=True)
+            probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(output)]))
+            self.assertAlmostEqual(float(probe['format']['duration']), 2.5, delta=.1)
+            self.assertEqual(int(next(s for s in probe['streams'] if s['codec_type'] == 'video')['nb_frames']), 75)
+            from PIL import Image
+            import io
+            import array
+            volumes = []
+            for timestamp, channel in [(.2, 2), (1.8, 0)]:
+                frame = subprocess.check_output(['ffmpeg', '-v', 'error', '-ss', str(timestamp), '-i', str(output), '-frames:v', '1', '-threads', '1', '-f', 'image2pipe', '-vcodec', 'png', '-'])
+                self.assertGreater(Image.open(io.BytesIO(frame)).getpixel((640, 360))[channel], 200)
+                samples = array.array('f', subprocess.check_output(['ffmpeg', '-v', 'error', '-ss', str(timestamp), '-i', str(output), '-t', '0.4', '-vn', '-ac', '1', '-ar', '8000', '-f', 'f32le', '-']))
+                volumes.append((sum(x*x for x in samples) / len(samples)) ** .5)
+            self.assertGreater(min(volumes), .01)
+            self.assertLess(max(volumes) / min(volumes), 1.2)
+
     def test_documented_submission_status_and_failure_contract(self):
         captured = []
         def handler(req):
